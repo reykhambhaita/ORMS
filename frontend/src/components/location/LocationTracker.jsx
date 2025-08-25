@@ -9,9 +9,15 @@ const LocationTracker = () => {
   const [manualLat, setManualLat] = useState('');
   const [manualLng, setManualLng] = useState('');
 
-  const userId = 'user123'; // In real app, get from auth/device ID
-  // Replace 192.168.1.XXX with your computer's actual IP address
-  // To find your IP: run 'ipconfig' (Windows) or 'ifconfig' (Mac/Linux)
+  // Generate a valid ObjectId (24 character hex string)
+  const generateObjectId = () => {
+    return Math.random().toString(16).substring(2, 10) +
+           Math.random().toString(16).substring(2, 10) +
+           Math.random().toString(16).substring(2, 10);
+  };
+
+  const userId = '507f1f77bcf86cd799439011'; // Valid ObjectId format
+
   const API_BASE_URL = 'http://192.168.1.7:3000/api'; // Change this IP!
 
   const trackLocation = async () => {
@@ -256,10 +262,10 @@ const LocationTracker = () => {
                 borderWidth: 1,
                 borderColor: '#ddd'
               }}>
-                <Text style={{ fontSize: 16, fontWeight: 'bold' }}>{mechanic.name}</Text>
+                <Text style={{ fontSize: 16, fontWeight: 'bold' }}>{mechanic.username}</Text>
                 <Text style={{ color: '#666', marginVertical: 5 }}>{mechanic.address}</Text>
-                <Text>Distance: {mechanic.distance} km</Text>
-                <Text>Rating: {mechanic.rating}/5 ⭐</Text>
+                <Text>Distance: {mechanic.distance}m</Text>
+                <Text>Rating: {mechanic.avgRating}/5 ⭐</Text>
                 <Text style={{ marginTop: 5 }}>Services: {mechanic.services.join(', ')}</Text>
                 <Text style={{ color: '#007AFF', marginTop: 5 }}>{mechanic.phone}</Text>
               </View>

@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import mongoose from 'mongoose';
 import crypto from 'crypto';
+import { User, UserLocation, Mechanic, Landmark, Admin } from './models.js';
 
 const app = express();
 const PORT = 3000;
@@ -9,37 +10,16 @@ const PORT = 3000;
 app.use(cors());
 app.use(express.json());
 
-// MongoDB connection (clean, no deprecated options)
+// MongoDB connection
 mongoose.connect('mongodb://localhost:27017/roadmechanic')
   .then(() => console.log("✅ Connected to MongoDB"))
   .catch(err => console.error("❌ MongoDB connection error:", err));
 
-// User Location Schema (encrypted)
-const userLocationSchema = new mongoose.Schema({
-  userId: String,
-  encryptedLat: String,
-  encryptedLng: String,
-  timestamp: { type: Date, default: Date.now }
-});
-const UserLocation = mongoose.model('UserLocation', userLocationSchema);
-
-// Mechanic Schema (dummy data)
-const mechanicSchema = new mongoose.Schema({
-  name: String,
-  address: String,
-  lat: Number,
-  lng: Number,
-  rating: Number,
-  services: [String],
-  phone: String
-});
-const Mechanic = mongoose.model('Mechanic', mechanicSchema);
-
-// Encryption setup (modern)
+// Encryption setup
 const ENCRYPTION_KEY = crypto
   .createHash("sha256")
   .update(process.env.ENCRYPTION_KEY || "supersecretkey")
-  .digest(); // 32-byte key for AES-256
+  .digest();
 const IV_LENGTH = 16;
 
 function encrypt(text) {
@@ -59,72 +39,38 @@ function decrypt(text) {
   return parseFloat(decrypted);
 }
 
-// Calculate distance between two points (Haversine formula)
+// Haversine formula (updated to return meters)
 function calculateDistance(lat1, lng1, lat2, lng2) {
-  const R = 6371; // Earth's radius in km
+  const R = 6371000; // meters (changed from km)
   const dLat = (lat2 - lat1) * Math.PI / 180;
   const dLng = (lng2 - lng1) * Math.PI / 180;
-  const a = Math.sin(dLat/2) ** 2 +
-    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-    Math.sin(dLng/2) ** 2;
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  const a = Math.sin(dLat/2)**2 +
+            Math.cos(lat1 * Math.PI/180) * Math.cos(lat2 * Math.PI/180) *
+            Math.sin(dLng/2)**2;
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   return R * c;
 }
 
-// Seed dummy mechanics data
-async function seedMechanics() {
-  const count = await Mechanic.countDocuments();
-  if (count === 0) {
-    const dummyMechanics = [
-      {
-        name: "QuickFix Auto Repair",
-        address: "123 Main St, City Center",
-        lat: 23.0225,
-        lng: 72.5714,
-        rating: 4.5,
-        services: ["Oil Change", "Brake Repair", "Engine Diagnostics"],
-        phone: "+91-98765-43210"
-      },
-      {
-        name: "24/7 Emergency Garage",
-        address: "456 Highway Road, Near Mall",
-        lat: 23.0300,
-        lng: 72.5800,
-        rating: 4.2,
-        services: ["Towing", "Battery Replacement", "Tire Change"],
-        phone: "+91-98765-43211"
-      },
-      {
-        name: "Pro Mechanics Hub",
-        address: "789 Industrial Area, Zone 1",
-        lat: 23.0150,
-        lng: 72.5650,
-        rating: 4.7,
-        services: ["AC Repair", "Transmission", "Body Work"],
-        phone: "+91-98765-43212"
-      },
-      {
-        name: "Roadside Heroes",
-        address: "321 Service Lane, Downtown",
-        lat: 23.0280,
-        lng: 72.5750,
-        rating: 4.3,
-        services: ["Emergency Repair", "Jump Start", "Lockout Service"],
-        phone: "+91-98765-43213"
-      }
-    ];
-
-    await Mechanic.insertMany(dummyMechanics);
-    console.log('🚗 Dummy mechanics data seeded');
-  }
+// Calculate average rating
+function calculateAverageRating(ratings) {
+  if (!ratings || ratings.length === 0) return 0;
+  return ratings.reduce((sum, rating) => sum + rating, 0) / ratings.length;
 }
 
-// Routes
+// Determine region based on coordinates (simple implementation)
+function determineRegion(lat, lng) {
+  // You can implement more sophisticated region detection here
+  const latZone = Math.floor(lat / 5) * 5; // Group by 5-degree zones
+  const lngZone = Math.floor(lng / 5) * 5;
+  return `region_${latZone}_${lngZone}`;
+}
+
+
+
+// Save user location & return nearby mechanics
 app.post('/api/location', async (req, res) => {
   try {
     const { latitude, longitude, userId } = req.body;
-
-
     if (!latitude || !longitude || !userId) {
       return res.status(400).json({ error: 'Missing required fields' });
     }
@@ -133,32 +79,50 @@ app.post('/api/location', async (req, res) => {
     const encryptedLat = encrypt(latitude);
     const encryptedLng = encrypt(longitude);
 
-    // Save encrypted location
-    const userLocation = new UserLocation({ userId, encryptedLat, encryptedLng });
+    // Save user location
+    const userLocation = new UserLocation({
+      userId,
+      encryptedLat,
+      encryptedLng,
+      locatedAt: new Date()
+    });
     await userLocation.save();
 
-    // Find nearby mechanics
-    const mechanics = await Mechanic.find();
+    // Update user's lastLocation reference and sync preferences
+    const region = determineRegion(latitude, longitude);
+    await User.findByIdAndUpdate(userId, {
+      lastLocation: userLocation._id,
+      lastOfflineSync: new Date(),
+      $addToSet: { preferredRegions: region }
+    });
+
+    // Find nearby mechanics (within 10km)
+    const mechanics = await Mechanic.find({ isActive: true });
     const nearbyMechanics = mechanics
-      .map(mechanic => ({
-        ...mechanic.toObject(),
-        distance: calculateDistance(latitude, longitude, mechanic.lat, mechanic.lng)
-      }))
-      .filter(mechanic => mechanic.distance <= 10)
+      .map(m => {
+        const mechLat = decrypt(m.location.lat);
+        const mechLng = decrypt(m.location.lng);
+        const distance = calculateDistance(latitude, longitude, mechLat, mechLng);
+        return { ...m.toObject(), distance };
+      })
+      .filter(m => m.distance <= 10000) // 10km in meters
       .sort((a, b) => a.distance - b.distance)
       .slice(0, 5);
 
     res.json({
       success: true,
       message: 'Location saved successfully',
+      region: region,
       nearbyMechanics: nearbyMechanics.map(m => ({
         id: m._id,
-        name: m.name,
+        username: m.username,
         address: m.address,
-        rating: m.rating,
+        organisation: m.organisation,
+        avgRating: calculateAverageRating(m.ratings),
+        ratingCount: m.ratings.length,
         services: m.services,
         phone: m.phone,
-        distance: Math.round(m.distance * 100) / 100
+        distance: Math.round(m.distance)
       }))
     });
 
@@ -168,39 +132,47 @@ app.post('/api/location', async (req, res) => {
   }
 });
 
+// Get nearby mechanics for a user
 app.get('/api/mechanics/nearby/:userId', async (req, res) => {
   try {
     const { userId } = req.params;
-    const userLocation = await UserLocation.findOne({ userId }).sort({ timestamp: -1 });
+    const { radius = 10000, services } = req.query; // Default 10km radius
 
-    if (!userLocation) {
-      return res.status(404).json({ error: 'User location not found' });
-    }
+    const userLocation = await UserLocation.findOne({ userId }).sort({ locatedAt: -1 });
+    if (!userLocation) return res.status(404).json({ error: 'User location not found' });
 
-    // Decrypt coordinates
     const latitude = decrypt(userLocation.encryptedLat);
     const longitude = decrypt(userLocation.encryptedLng);
 
-    // Find nearby mechanics
-    const mechanics = await Mechanic.find();
+    let query = { isActive: true };
+    if (services) {
+      const serviceArray = services.split(',');
+      query.services = { $in: serviceArray };
+    }
+
+    const mechanics = await Mechanic.find(query);
     const nearbyMechanics = mechanics
-      .map(mechanic => ({
-        ...mechanic.toObject(),
-        distance: calculateDistance(latitude, longitude, mechanic.lat, mechanic.lng)
-      }))
-      .filter(mechanic => mechanic.distance <= 10)
+      .map(m => {
+        const mechLat = decrypt(m.location.lat);
+        const mechLng = decrypt(m.location.lng);
+        const distance = calculateDistance(latitude, longitude, mechLat, mechLng);
+        return { ...m.toObject(), distance };
+      })
+      .filter(m => m.distance <= parseInt(radius))
       .sort((a, b) => a.distance - b.distance)
-      .slice(0, 5);
+      .slice(0, 10);
 
     res.json({
       nearbyMechanics: nearbyMechanics.map(m => ({
         id: m._id,
-        name: m.name,
+        username: m.username,
         address: m.address,
-        rating: m.rating,
+        organisation: m.organisation,
+        avgRating: calculateAverageRating(m.ratings),
+        ratingCount: m.ratings.length,
         services: m.services,
         phone: m.phone,
-        distance: Math.round(m.distance * 100) / 100
+        distance: Math.round(m.distance)
       }))
     });
 
@@ -210,10 +182,310 @@ app.get('/api/mechanics/nearby/:userId', async (req, res) => {
   }
 });
 
-// Initialize server
-app.listen(PORT, async () => {
+// OFFLINE SYNC ENDPOINTS
+
+// Download mechanics for offline use
+app.post('/api/mechanics/offline-sync', async (req, res) => {
+  try {
+    const { location, radius = 50000, includeInactive = false, decryptCoordinates = true } = req.body;
+
+    if (!location || !location.lat || !location.lng) {
+      return res.status(400).json({ error: 'Location coordinates required' });
+    }
+
+    const { lat, lng } = location;
+    const region = determineRegion(lat, lng);
+
+    // Build query
+    let query = {};
+    if (!includeInactive) {
+      query.isActive = true;
+    }
+
+    // Get all mechanics and filter by distance
+    const mechanics = await Mechanic.find(query).sort({ priority: -1, updatedAt: -1 });
+
+    const nearbyMechanics = mechanics
+      .map(m => {
+        try {
+          const mechLat = decrypt(m.location.lat);
+          const mechLng = decrypt(m.location.lng);
+          const distance = calculateDistance(lat, lng, mechLat, mechLng);
+
+          const mechanicData = {
+            _id: m._id,
+            username: m.username,
+            phone: m.phone,
+            address: m.address,
+            services: m.services,
+            ratings: m.ratings,
+            organisation: m.organisation,
+            isActive: m.isActive,
+            region: m.region || region,
+            priority: m.priority || 0,
+            lastSyncVersion: m.lastSyncVersion || 1,
+            distance: distance
+          };
+
+          // Include decrypted coordinates if requested
+          if (decryptCoordinates) {
+            mechanicData.location = {
+              lat: mechLat,
+              lng: mechLng,
+              locatedAt: m.location.locatedAt
+            };
+          } else {
+            mechanicData.location = m.location;
+          }
+
+          return mechanicData;
+        } catch (error) {
+          console.error('Error processing mechanic:', m._id, error);
+          return null;
+        }
+      })
+      .filter(m => m !== null && m.distance <= radius)
+      .sort((a, b) => a.distance - b.distance);
+
+    const currentSyncVersion = Math.floor(Date.now() / 1000); // Unix timestamp
+
+    res.json({
+      success: true,
+      mechanics: nearbyMechanics,
+      syncVersion: currentSyncVersion,
+      region: region,
+      downloadedAt: new Date().toISOString(),
+      totalCount: nearbyMechanics.length
+    });
+
+  } catch (error) {
+    console.error('❌ Error in offline mechanic sync:', error);
+    res.status(500).json({ error: 'Failed to sync mechanics for offline use' });
+  }
+});
+
+// Download landmarks for offline use
+app.post('/api/landmarks/offline-sync', async (req, res) => {
+  try {
+    const { location, radius = 50000, categories } = req.body;
+
+    if (!location || !location.lat || !location.lng) {
+      return res.status(400).json({ error: 'Location coordinates required' });
+    }
+
+    const { lat, lng } = location;
+    const region = determineRegion(lat, lng);
+
+    // Build query
+    let query = {};
+    if (categories && categories.length > 0) {
+      query.category = { $in: categories };
+    }
+
+    const landmarks = await Landmark.find(query).sort({ priority: -1 });
+
+    const nearbyLandmarks = landmarks
+      .map(l => {
+        const distance = calculateDistance(lat, lng, l.location.lat, l.location.lng);
+        return {
+          _id: l._id,
+          name: l.name,
+          category: l.category,
+          location: l.location,
+          region: l.region || region,
+          priority: l.priority || 0,
+          lastSyncVersion: l.lastSyncVersion || 1,
+          distance: distance
+        };
+      })
+      .filter(l => l.distance <= radius)
+      .sort((a, b) => a.distance - b.distance);
+
+    const currentSyncVersion = Math.floor(Date.now() / 1000);
+
+    res.json({
+      success: true,
+      landmarks: nearbyLandmarks,
+      syncVersion: currentSyncVersion,
+      region: region,
+      downloadedAt: new Date().toISOString(),
+      totalCount: nearbyLandmarks.length
+    });
+
+  } catch (error) {
+    console.error('❌ Error in offline landmark sync:', error);
+    res.status(500).json({ error: 'Failed to sync landmarks for offline use' });
+  }
+});
+
+// Get sync status for a user
+app.get('/api/sync/status/:userId', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const user = await User.findById(userId);
+
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const lastLocation = await UserLocation.findById(user.lastLocation);
+
+    res.json({
+      lastOfflineSync: user.lastOfflineSync,
+      preferredRegions: user.preferredRegions || [],
+      offlineRadius: user.offlineRadius || 50000,
+      lastLocation: lastLocation ? {
+        lat: decrypt(lastLocation.encryptedLat),
+        lng: decrypt(lastLocation.encryptedLng),
+        timestamp: lastLocation.locatedAt
+      } : null
+    });
+
+  } catch (error) {
+    console.error('❌ Error fetching sync status:', error);
+    res.status(500).json({ error: 'Failed to fetch sync status' });
+  }
+});
+
+
+// Get all mechanics
+app.get('/api/mechanics/all', async (req, res) => {
+  try {
+    const { includeInactive = false, region, limit = 1000 } = req.query;
+
+    let query = {};
+    if (!includeInactive) {
+      query.isActive = true;
+    }
+    if (region) {
+      query.region = region;
+    }
+
+    const mechanics = await Mechanic.find(query)
+      .limit(parseInt(limit))
+      .sort({ priority: -1, updatedAt: -1 });
+
+    res.json({
+      mechanics: mechanics.map(m => ({
+        ...m.toObject(),
+        avgRating: calculateAverageRating(m.ratings),
+        ratingCount: m.ratings.length
+      })),
+      totalCount: mechanics.length
+    });
+  } catch (error) {
+    console.error('❌ Error fetching all mechanics:', error);
+    res.status(500).json({ error: 'Failed to fetch mechanics' });
+  }
+});
+
+// Get all landmarks
+app.get('/api/landmarks/all', async (req, res) => {
+  try {
+    const { category, region, limit = 1000 } = req.query;
+
+    let query = {};
+    if (category) {
+      query.category = category;
+    }
+    if (region) {
+      query.region = region;
+    }
+
+    const landmarks = await Landmark.find(query)
+      .limit(parseInt(limit))
+      .sort({ priority: -1, updatedAt: -1 });
+
+    res.json({
+      landmarks: landmarks,
+      totalCount: landmarks.length
+    });
+  } catch (error) {
+    console.error('❌ Error fetching landmarks:', error);
+    res.status(500).json({ error: 'Failed to fetch landmarks' });
+  }
+});
+
+// ADMIN ENDPOINTS
+
+
+// Bulk update mechanic regions (for initial setup)
+app.post('/api/admin/mechanics/update-regions', async (req, res) => {
+  try {
+    const mechanics = await Mechanic.find({});
+    let updated = 0;
+
+    for (const mechanic of mechanics) {
+      try {
+        const lat = decrypt(mechanic.location.lat);
+        const lng = decrypt(mechanic.location.lng);
+        const region = determineRegion(lat, lng);
+
+        await Mechanic.findByIdAndUpdate(mechanic._id, {
+          region: region,
+          lastSyncVersion: 1
+        });
+        updated++;
+      } catch (error) {
+        console.error(`Failed to update mechanic ${mechanic._id}:`, error);
+      }
+    }
+
+    res.json({
+      success: true,
+      message: `Updated regions for ${updated} mechanics`
+    });
+  } catch (error) {
+    console.error('❌ Error updating mechanic regions:', error);
+    res.status(500).json({ error: 'Failed to update mechanic regions' });
+  }
+});
+
+// Bulk update landmark regions
+app.post('/api/admin/landmarks/update-regions', async (req, res) => {
+  try {
+    const landmarks = await Landmark.find({});
+    let updated = 0;
+
+    for (const landmark of landmarks) {
+      const region = determineRegion(landmark.location.lat, landmark.location.lng);
+
+      await Landmark.findByIdAndUpdate(landmark._id, {
+        region: region,
+        lastSyncVersion: 1
+      });
+      updated++;
+    }
+
+    res.json({
+      success: true,
+      message: `Updated regions for ${updated} landmarks`
+    });
+  } catch (error) {
+    console.error('❌ Error updating landmark regions:', error);
+    res.status(500).json({ error: 'Failed to update landmark regions' });
+  }
+});
+
+// Health check endpoint
+app.get('/api/health', (req, res) => {
+  res.json({
+    status: 'OK',
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime()
+  });
+});
+
+// Error handling middleware
+app.use((err, req, res, next) => {
+  console.error('❌ Unhandled error:', err);
+  res.status(500).json({ error: 'Internal server error' });
+});
+
+app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
-  await seedMechanics();
+  console.log(`📡 Offline sync endpoints available`);
+  console.log(`🔒 Encryption enabled for coordinates`);
 });
 
 export default app;
