@@ -1,8 +1,23 @@
 import cors from 'cors';
 import crypto from 'crypto';
 import express from 'express';
+import jwt from 'jsonwebtoken'; // Make sure you have this import
 import mongoose from 'mongoose';
 import { Landmark, Mechanic, User, UserLocation } from './models.js';
+
+
+const authenticateToken = (req, res, next) => {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1];
+
+  if (token == null) return res.sendStatus(401);
+
+  jwt.verify(token, process.env.JWT_SECRET || 'bc69d12cea91ad4da39bda024903751e', (err, user) => {
+    if (err) return res.sendStatus(403);
+    req.user = user;
+    next();
+  });
+};
 const app = express();
 const PORT = 3000;
 
