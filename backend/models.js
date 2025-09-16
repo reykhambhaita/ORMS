@@ -51,7 +51,7 @@ const mechanicSchema = new mongoose.Schema({
   organisation: { type: String, trim: true },
   isActive: { type: Boolean, default: true },
   timestamp: { type: Date, default: Date.now },
-  // NEW: Offline sync fields
+  // Offline sync fields
   lastSyncVersion: { type: Number, default: 1 },
   region: { type: String, index: true }, // for regional downloads
   priority: { type: Number, default: 0 } // higher priority mechanics downloaded first
