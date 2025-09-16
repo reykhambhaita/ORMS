@@ -18,6 +18,8 @@ const authenticateToken = (req, res, next) => {
     next();
   });
 };
+
+
 const app = express();
 const PORT = 3000;
 
@@ -195,7 +197,7 @@ app.get('/api/mechanics/nearby/:userId', async (req, res) => {
     res.status(500).json({ error: 'Internal server error' });
   }
 });
-app.post('/api/location/enhanced', authenticateToken, requireActiveUser, async (req, res) => {
+app.post('/api/location/enhanced', authenticateToken, async (req, res) => {
   try {
     const { latitude, longitude, includeNearby = true, radius = 10000 } = req.body;
     const userId = req.user.uid; // Get from authenticated user
