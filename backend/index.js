@@ -874,13 +874,13 @@ app.use((err, req, res, next) => {
   console.error('âŒ Unhandled error:', err);
   res.status(500).json({ error: 'Internal server error' });
 });
-
-app.listen(PORT, () => {
-  console.log(`ðŸš€ Server running on port ${PORT}`);
-  console.log(`ðŸ“¡ Offline sync endpoints available`);
-  console.log(`ðŸ”’ Encryption enabled for coordinates`);
-});
-
+//
+// app.listen(PORT, () => {
+//   console.log(`ðŸš€ Server running on port ${PORT}`);
+//   console.log(`ðŸ“¡ Offline sync endpoints available`);
+//   console.log(`ðŸ”’ Encryption enabled for coordinates`);
+// });
+//
 
 
 
