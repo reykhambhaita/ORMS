@@ -14,21 +14,60 @@ app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
-// MongoDB connection
+// MongoDB connection with retry logic
 const connectDB = async () => {
-  try {
-    const mongoURI = process.env.MONGODB_URI || process.env.MONGO_URI || 'mongodb://localhost:27017/location-tracker';
+  const maxRetries = 5;
+  let retries = 0;
 
-    await mongoose.connect(mongoURI, {
-      useNewUrlParser: true,
-      useUnifiedTopology: true,
-    });
+  while (retries < maxRetries) {
+    try {
+      // Ensure you have a valid MongoDB URI
+      const mongoURI = process.env.MONGODB_URI || process.env.MONGO_URI;
 
-    console.log('✅ MongoDB connected successfully');
-  } catch (error) {
-    console.error('❌ MongoDB connection failed:', error);
-    process.exit(1);
+      if (!mongoURI) {
+        throw new Error('MongoDB URI is not defined in environment variables');
+      }
+
+      console.log(`🔄 Attempting to connect to MongoDB (attempt ${retries + 1}/${maxRetries})...`);
+
+      // Remove deprecated options and add timeout
+      await mongoose.connect(mongoURI, {
+        serverSelectionTimeoutMS: 5000, // Timeout after 5s instead of 30s
+        socketTimeoutMS: 45000, // Close sockets after 45s of inactivity
+      });
+
+      console.log('✅ MongoDB connected successfully');
+      console.log(`📊 Database: ${mongoose.connection.db.databaseName}`);
+      return true;
+    } catch (error) {
+      retries++;
+      console.error(`❌ MongoDB connection attempt ${retries} failed:`, error.message);
+
+      if (retries === maxRetries) {
+        console.error('❌ Max retries reached. MongoDB connection failed permanently.');
+        throw error;
+      }
+
+      // Wait before retrying (exponential backoff)
+      const waitTime = Math.min(1000 * Math.pow(2, retries), 10000);
+      console.log(`⏳ Waiting ${waitTime}ms before retry...`);
+      await new Promise(resolve => setTimeout(resolve, waitTime));
+    }
   }
+};
+
+// MongoDB connection state check middleware
+const checkDatabaseConnection = (req, res, next) => {
+  if (mongoose.connection.readyState !== 1) {
+    return res.status(503).json({
+      success: false,
+      message: 'Database connection is not ready',
+      data: null,
+      connectionState: mongoose.connection.readyState
+      // 0 = disconnected, 1 = connected, 2 = connecting, 3 = disconnecting
+    });
+  }
+  next();
 };
 
 // MongoDB Schemas (based on models.js)
@@ -61,7 +100,7 @@ const userLocationSchema = new mongoose.Schema({
   },
   source: {
     type: String,
-    enum: ['gps', 'wifi', 'bluetooth', 'deadReckoning', 'beacon', 'fusion'],
+    enum: ['gps', 'wifi', 'bluetooth', 'deadReckoning', 'beacon', 'fusion', 'offline'],
     default: 'gps'
   },
   locatedAt: {
@@ -161,16 +200,33 @@ const decryptCoordinate = (encryptedCoord) => {
 
 // Routes
 
-// Health check
+// Health check - doesn't require DB connection
 app.get('/api/health', (req, res) => {
+  const dbState = ['disconnected', 'connected', 'connecting', 'disconnecting'];
   res.json({
     success: true,
     message: 'Server is running',
     data: {
       timestamp: new Date().toISOString(),
-      uptime: process.uptime()
+      uptime: process.uptime(),
+      database: {
+        status: dbState[mongoose.connection.readyState],
+        readyState: mongoose.connection.readyState
+      },
+      environment: {
+        NODE_ENV: process.env.NODE_ENV || 'development',
+        hasMongoUri: !!process.env.MONGODB_URI || !!process.env.MONGO_URI
+      }
     }
   });
+});
+
+// Apply database check middleware to all routes except health check
+app.use('/api/*', (req, res, next) => {
+  if (req.path === '/api/health') {
+    return next();
+  }
+  checkDatabaseConnection(req, res, next);
 });
 
 // POST /api/location/enhanced - Save single location with nearby data
@@ -355,7 +411,7 @@ app.post('/api/mechanics/offline-sync', async (req, res) => {
         return a.distance - b.distance;
       });
 
-    console.log(`🔍 Found ${mechanicsWithDistance.length} mechanics within ${radius}m`);
+    console.log(`📍 Found ${mechanicsWithDistance.length} mechanics within ${radius}m`);
 
     res.json({
       success: true,
@@ -410,7 +466,7 @@ app.post('/api/landmarks/offline-sync', async (req, res) => {
         return a.distance - b.distance;
       });
 
-    console.log(`🔍 Found ${landmarksWithDistance.length} landmarks within ${radius}m`);
+    console.log(`📍 Found ${landmarksWithDistance.length} landmarks within ${radius}m`);
 
     res.json({
       success: true,
@@ -442,7 +498,8 @@ app.get('/api/locations', async (req, res) => {
 
     let query = {};
     if (userId) {
-query.userId = new mongoose.Types.ObjectId(userId);    }
+      query.userId = new mongoose.Types.ObjectId(userId);
+    }
     if (source) {
       query.source = source;
     }
@@ -482,7 +539,8 @@ app.use((error, req, res, next) => {
   res.status(500).json({
     success: false,
     message: 'Internal server error',
-    data: null
+    data: null,
+    error: process.env.NODE_ENV === 'development' ? error.message : undefined
   });
 });
 
@@ -495,16 +553,18 @@ app.use((req, res) => {
   });
 });
 
-
 // Start server
 const startServer = async () => {
   try {
+    // Connect to MongoDB first
     await connectDB();
 
+    // Only start listening after successful DB connection
     app.listen(PORT, () => {
       console.log(`🚀 Server running on port ${PORT}`);
       console.log(`📍 API Base URL: http://localhost:${PORT}/api`);
       console.log(`🏥 Health check: http://localhost:${PORT}/api/health`);
+      console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
     });
   } catch (error) {
     console.error('❌ Failed to start server:', error);
@@ -515,16 +575,35 @@ const startServer = async () => {
 // Graceful shutdown
 process.on('SIGINT', async () => {
   console.log('\n🛑 Received SIGINT. Gracefully shutting down...');
-  await mongoose.connection.close();
-  console.log('✅ MongoDB connection closed.');
+  try {
+    await mongoose.connection.close();
+    console.log('✅ MongoDB connection closed.');
+  } catch (error) {
+    console.error('❌ Error closing MongoDB connection:', error);
+  }
   process.exit(0);
 });
 
 process.on('SIGTERM', async () => {
   console.log('\n🛑 Received SIGTERM. Gracefully shutting down...');
-  await mongoose.connection.close();
-  console.log('✅ MongoDB connection closed.');
+  try {
+    await mongoose.connection.close();
+    console.log('✅ MongoDB connection closed.');
+  } catch (error) {
+    console.error('❌ Error closing MongoDB connection:', error);
+  }
   process.exit(0);
+});
+
+// Handle uncaught exceptions
+process.on('uncaughtException', (error) => {
+  console.error('❌ Uncaught Exception:', error);
+  process.exit(1);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('❌ Unhandled Rejection at:', promise, 'reason:', reason);
+  process.exit(1);
 });
 
 // Start the server
