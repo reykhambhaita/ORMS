@@ -7,7 +7,7 @@ import {
   getLandmarksNearLocation,
   getNearbyMechanics,
   updateUserLocation
-} from './db';
+} from './db.js';
 
 dotenv.config();
 
