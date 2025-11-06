@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@clerk/clerk-expo": "^2.17.1",
+    "@expo/config-plugins": "10.1.1",
     "@expo/metro-runtime": "~5.0.5",
     "@react-native-async-storage/async-storage": "2.1.2",
     "@react-native-community/geolocation": "^3.4.0",
