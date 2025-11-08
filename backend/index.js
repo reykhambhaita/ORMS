@@ -1,4 +1,3 @@
-// backend/index.js - Alternative approach using Clerk REST API
 import cors from 'cors';
 import dotenv from 'dotenv';
 import express from 'express';
@@ -14,105 +13,29 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// === CLERK AUTHENTICATION MIDDLEWARE (REST API Method) ===
-const authenticateClerkToken = async (req, res, next) => {
-  try {
-    const authHeader = req.headers.authorization;
-    
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      console.log('❌ No authorization header');
-      return res.status(401).json({ error: 'No token provided' });
-    }
-
-    const token = authHeader.substring(7);
-    
-    if (!process.env.CLERK_SECRET_KEY) {
-      console.error('❌ CLERK_SECRET_KEY not set');
-      return res.status(500).json({ error: 'Server configuration error' });
-    }
-
-    try {
-      // Verify token using Clerk's REST API
-      const response = await fetch('https://api.clerk.com/v1/sessions/verify', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${process.env.CLERK_SECRET_KEY}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ token }),
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error('❌ Clerk verification failed:', response.status, errorText);
-        return res.status(401).json({ error: 'Invalid token' });
-      }
-
-      const session = await response.json();
-      req.userId = session.user_id;
-      console.log('✅ Authenticated user:', req.userId);
-      next();
-    } catch (verifyError) {
-      console.error('❌ Token verification error:', verifyError);
-      return res.status(401).json({ error: 'Token verification failed' });
-    }
-  } catch (error) {
-    console.error('❌ Auth error:', error);
-    res.status(401).json({ error: 'Authentication failed' });
-  }
-};
-
 // === ROUTES ===
 
 app.get('/', (req, res) => {
-  res.json({ 
-    message: 'ORMS Backend API',
-    version: '1.0.0',
-    endpoints: {
-      health: '/api/health',
-      location: 'POST /api/user/location',
-      mechanics: 'GET /api/mechanics/nearby',
-      landmarks: 'GET /api/landmarks'
-    }
-  });
+  res.send('Welcome to the ORMS backend API');
 });
 
-app.get('/api/health', (req, res) => {
-  res.json({ 
-    status: 'ok', 
-    timestamp: new Date().toISOString(),
-    clerkConfigured: !!process.env.CLERK_SECRET_KEY,
-    mongoConfigured: !!process.env.MONGODB_URI,
-    environment: process.env.NODE_ENV || 'development'
-  });
-});
-
-// Protected route - Update user location
-app.post('/api/user/location', authenticateClerkToken, async (req, res) => {
+app.post('/api/user/location', async (req, res) => {
   try {
-    const { location, landmarks } = req.body;
-    const userId = req.userId;
-    
-    console.log('📍 Location update:', { userId, lat: location?.latitude, lng: location?.longitude });
-    
-    if (!location?.latitude || !location?.longitude) {
-      return res.status(400).json({ error: 'Missing location data' });
+    const { userId, location, landmarks } = req.body;
+    if (!userId || !location?.latitude || !location?.longitude) {
+      return res.status(400).json({ error: 'Missing required fields' });
     }
 
-    const result = await updateUserLocation(userId, location, landmarks || []);
-    console.log('✅ Location saved');
+    const result = await updateUserLocation(userId, location, landmarks);
     res.json({ success: true, data: result });
   } catch (error) {
-    console.error('❌ Location update error:', error);
     res.status(500).json({ error: error.message });
   }
 });
 
-// Protected route - Get nearby mechanics
-app.get('/api/mechanics/nearby', authenticateClerkToken, async (req, res) => {
+app.get('/api/mechanics/nearby', async (req, res) => {
   try {
     const { lat, lng, radius } = req.query;
-    
     if (!lat || !lng) {
       return res.status(400).json({ error: 'Missing lat or lng' });
     }
@@ -124,16 +47,13 @@ app.get('/api/mechanics/nearby', authenticateClerkToken, async (req, res) => {
     );
     res.json({ success: true, data: mechanics });
   } catch (error) {
-    console.error('❌ Mechanics query error:', error);
     res.status(500).json({ error: error.message });
   }
 });
 
-// Protected route - Get nearby landmarks
-app.get('/api/landmarks', authenticateClerkToken, async (req, res) => {
+app.get('/api/landmarks', async (req, res) => {
   try {
     const { lat, lng, radius } = req.query;
-    
     if (!lat || !lng) {
       return res.status(400).json({ error: 'Missing lat or lng' });
     }
@@ -145,24 +65,22 @@ app.get('/api/landmarks', authenticateClerkToken, async (req, res) => {
     );
     res.json({ success: true, data: landmarks });
   } catch (error) {
-    console.error('❌ Landmarks query error:', error);
     res.status(500).json({ error: error.message });
   }
 });
 
-// === ERROR HANDLING ===
-app.use((err, req, res, next) => {
-  console.error('❌ Unhandled error:', err);
-  res.status(500).json({ error: 'Internal server error' });
+app.get('/api/health', (req, res) => {
+  res.json({ status: 'ok' });
 });
 
 // === SERVER ===
 const PORT = process.env.PORT || 3000;
 
-app.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`);
-  console.log(`🔑 Clerk: ${process.env.CLERK_SECRET_KEY ? 'Configured ✅' : 'Missing ❌'}`);
-  console.log(`🗄️  MongoDB: ${process.env.MONGODB_URI ? 'Configured ✅' : 'Missing ❌'}`);
-});
+// ESM-safe check (instead of require.main)
+if (process.argv[1] === new URL(import.meta.url).pathname) {
+  app.listen(PORT, () => {
+    console.log(`Server running on http://localhost:${PORT}`);
+  });
+}
 
 export default app;
