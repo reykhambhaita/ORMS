@@ -1,17 +1,15 @@
 // backend/auth.js
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
-import { User } from './db.js';
+import { Mechanic, User } from './db.js';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'dbe243a582f6059d0d47b360e55627645cb7fa96149a85c093d5d7ae663d42124bb9f5c6354f7fd6fd86c0d78a9c76b3e80de99ac33458064de2b76329beab4';
 const JWT_EXPIRES_IN = '7d';
 
-// Helper to generate JWT token - UPDATED to include role
 export const generateToken = (userId, role) => {
   return jwt.sign({ userId, role }, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
 };
 
-// Helper to verify JWT token
 export const verifyToken = (token) => {
   try {
     return jwt.verify(token, JWT_SECRET);
@@ -20,12 +18,11 @@ export const verifyToken = (token) => {
   }
 };
 
-// Signup handler - UPDATED to support role selection
+// UPDATED: Signup handler with automatic mechanic profile creation
 export const signup = async (req, res) => {
   try {
-    const { email, username, password, role } = req.body;
+    const { email, username, password, role, mechanicData } = req.body;
 
-    // Validation
     if (!email || !username || !password) {
       return res.status(400).json({
         error: 'Email, username, and password are required'
@@ -38,7 +35,6 @@ export const signup = async (req, res) => {
       });
     }
 
-    // Validate role
     const userRole = role && ['user', 'mechanic'].includes(role) ? role : 'user';
 
     // Check if user already exists
@@ -66,7 +62,28 @@ export const signup = async (req, res) => {
 
     await user.save();
 
-    // Generate token with role
+    // NEW: If mechanic role, create mechanic profile automatically
+    let mechanicProfile = null;
+    if (userRole === 'mechanic') {
+      // Create mechanic profile with default or provided data
+      mechanicProfile = new Mechanic({
+        userId: user._id,
+        name: mechanicData?.name || username,
+        phone: mechanicData?.phone || '',
+        location: {
+          type: 'Point',
+          coordinates: [
+            mechanicData?.longitude || 70.77, // Default Rajkot lng
+            mechanicData?.latitude || 23.0225  // Default Rajkot lat
+          ]
+        },
+        specialties: mechanicData?.specialties || [],
+        available: mechanicData?.available !== undefined ? mechanicData.available : true
+      });
+
+      await mechanicProfile.save();
+    }
+
     const token = generateToken(user._id.toString(), user.role);
 
     res.status(201).json({
@@ -78,7 +95,18 @@ export const signup = async (req, res) => {
         username: user.username,
         role: user.role,
         createdAt: user.createdAt
-      }
+      },
+      mechanicProfile: mechanicProfile ? {
+        id: mechanicProfile._id,
+        name: mechanicProfile.name,
+        phone: mechanicProfile.phone,
+        location: {
+          latitude: mechanicProfile.location.coordinates[1],
+          longitude: mechanicProfile.location.coordinates[0]
+        },
+        specialties: mechanicProfile.specialties,
+        available: mechanicProfile.available
+      } : null
     });
   } catch (error) {
     console.error('Signup error:', error);
@@ -86,19 +114,17 @@ export const signup = async (req, res) => {
   }
 };
 
-// Login handler - UPDATED to include role in token
+// Login handler - UPDATED to include mechanic profile if applicable
 export const login = async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    // Validation
     if (!email || !password) {
       return res.status(400).json({
         error: 'Email and password are required'
       });
     }
 
-    // Find user
     const user = await User.findOne({ email });
     if (!user) {
       return res.status(401).json({
@@ -106,7 +132,6 @@ export const login = async (req, res) => {
       });
     }
 
-    // Check password
     const isValidPassword = await bcrypt.compare(password, user.password);
     if (!isValidPassword) {
       return res.status(401).json({
@@ -114,7 +139,12 @@ export const login = async (req, res) => {
       });
     }
 
-    // Generate token with role
+    // NEW: Fetch mechanic profile if user is a mechanic
+    let mechanicProfile = null;
+    if (user.role === 'mechanic') {
+      mechanicProfile = await Mechanic.findOne({ userId: user._id });
+    }
+
     const token = generateToken(user._id.toString(), user.role);
 
     res.json({
@@ -126,7 +156,18 @@ export const login = async (req, res) => {
         username: user.username,
         role: user.role,
         createdAt: user.createdAt
-      }
+      },
+      mechanicProfile: mechanicProfile ? {
+        id: mechanicProfile._id,
+        name: mechanicProfile.name,
+        phone: mechanicProfile.phone,
+        location: {
+          latitude: mechanicProfile.location.coordinates[1],
+          longitude: mechanicProfile.location.coordinates[0]
+        },
+        specialties: mechanicProfile.specialties,
+        available: mechanicProfile.available
+      } : null
     });
   } catch (error) {
     console.error('Login error:', error);
@@ -134,14 +175,18 @@ export const login = async (req, res) => {
   }
 };
 
-// Get current user (protected route)
 export const getCurrentUser = async (req, res) => {
   try {
-    // req.userId is set by auth middleware
     const user = await User.findById(req.userId).select('-password');
 
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
+    }
+
+    // NEW: Fetch mechanic profile if user is a mechanic
+    let mechanicProfile = null;
+    if (user.role === 'mechanic') {
+      mechanicProfile = await Mechanic.findOne({ userId: user._id });
     }
 
     res.json({
@@ -152,7 +197,18 @@ export const getCurrentUser = async (req, res) => {
         username: user.username,
         role: user.role,
         createdAt: user.createdAt
-      }
+      },
+      mechanicProfile: mechanicProfile ? {
+        id: mechanicProfile._id,
+        name: mechanicProfile.name,
+        phone: mechanicProfile.phone,
+        location: {
+          latitude: mechanicProfile.location.coordinates[1],
+          longitude: mechanicProfile.location.coordinates[0]
+        },
+        specialties: mechanicProfile.specialties,
+        available: mechanicProfile.available
+      } : null
     });
   } catch (error) {
     console.error('Get user error:', error);
