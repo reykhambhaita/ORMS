@@ -14,6 +14,8 @@ import {
 } from "react-native";
 import { BleManager } from "react-native-ble-plx";
 import WifiManager from "react-native-wifi-reborn";
+import authService from "../../screens/authService";
+
 class KalmanFilter {
   constructor(
     processNoise = 0.001,
@@ -60,7 +62,6 @@ const STEP_DEBOUNCE_MS = 300;
 const STEP_LENGTH_DEGREES = 0.000007;
 const SOURCE_TIMEOUT_MS = 10000;
 const SYNC_INTERVAL_MS = 10 * 60 * 1000; // 10 minutes
-const API_BASE_URL = "https://backend-three-sepia-16.vercel.app";
 
 const NOISE_MAP = {
   gps: 0.01,
@@ -90,8 +91,8 @@ const MultiModalLocationTracker = () => {
   const [isTracking, setIsTracking] = useState(false);
   const [permissionGranted, setPermissionGranted] = useState(false);
   const [unsyncedCount, setUnsyncedCount] = useState(0);
-
   const [connectionTest, setConnectionTest] = useState(null);
+  const [user, setUser] = useState(null);
 
   const kalmanLat = useRef(new KalmanFilter(0.001, 0.01, RAJKOT_COORDS.lat));
   const kalmanLng = useRef(new KalmanFilter(0.001, 0.01, RAJKOT_COORDS.lng));
@@ -120,9 +121,18 @@ const MultiModalLocationTracker = () => {
     deadReckoning: null,
   });
 
-  // ---------- sqlite promise wrappers (kept inside file, minimal) ----------
+  // ---------- Token Management with authService ----------
+  const getToken = async () => {
+    try {
+      return await authService.getToken();
+    } catch (error) {
+      console.error("Error getting token:", error);
+      return null;
+    }
+  };
+
+  // ---------- sqlite promise wrappers ----------
   const openDatabase = () => {
-    // expo-sqlite openDatabase is synchronous
     return SQLite.openDatabase("locationtracker.db");
   };
 
@@ -149,35 +159,45 @@ const MultiModalLocationTracker = () => {
   const testBackendConnection = async () => {
     try {
       setConnectionTest('Testing...');
-      const token = await getToken();
 
-      const healthResp = await fetch(`${API_BASE_URL}/api/health`);
-      const healthData = await healthResp.json();
+      // Check if authenticated
+      const isAuth = await authService.isAuthenticated();
+      if (!isAuth) {
+        setConnectionTest('Error: Not authenticated');
+        return;
+      }
 
-      const testResp = await fetch(`${API_BASE_URL}/api/user/location`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          userId: user?.id || 'testUser',
-          location: { latitude: 23.0225, longitude: 70.77, accuracy: 10, timestamp: Date.now() },
-          landmarks: [],
-        }),
-      });
-      const testData = await testResp.json();
+      // Test authenticated request
+      const result = await authService.authenticatedRequest(
+        '/api/user/location',
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            location: {
+              latitude: 23.0225,
+              longitude: 70.77,
+              accuracy: 10,
+              timestamp: Date.now()
+            },
+            landmarks: [],
+          }),
+        }
+      );
 
-      setConnectionTest(`✅ Health: ${healthData.status}, POST: ${testData.success ? 'Success' : 'Failed'}`);
+      setConnectionTest(
+        result.success
+          ? 'Success - Connected & Authenticated!'
+          : `Error: ${result.error}`
+      );
     } catch (error) {
-      setConnectionTest(`❌ Error: ${error.message}`);
+      setConnectionTest(`Error: ${error.message}`);
     }
   };
+
   // ---------- DB helpers ----------
   const initializeDatabase = async () => {
     try {
       db.current = openDatabase();
-      // create table(s)
       await execSqlAsync(`CREATE TABLE IF NOT EXISTS locations (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         latitude REAL NOT NULL,
@@ -187,7 +207,6 @@ const MultiModalLocationTracker = () => {
         synced INTEGER DEFAULT 0,
         sources TEXT
       );`);
-      // indexes (sqlite doesn't need separate index for small app but keep count query fast)
       await execSqlAsync(
         "CREATE INDEX IF NOT EXISTS idx_synced ON locations(synced);"
       );
@@ -238,7 +257,6 @@ const MultiModalLocationTracker = () => {
       "SELECT * FROM locations WHERE synced = 0 ORDER BY timestamp ASC LIMIT ?;",
       [limit]
     );
-    // result rows -> rows._array
     return res?.rows?._array || [];
   };
 
@@ -252,13 +270,17 @@ const MultiModalLocationTracker = () => {
     await updateUnsyncedCount();
   };
 
-  // ---------- sync logic ----------
-
-
+  // ---------- sync logic with authenticated requests ----------
   const syncWithBackend = async () => {
     if (!db.current || !networkStatus.isConnected) return;
+
     try {
       const token = await getToken();
+      if (!token) {
+        console.log('No auth token, skipping sync');
+        return;
+      }
+
       const rows = await fetchUnsyncedBatch(50);
       if (!rows.length) return;
 
@@ -266,7 +288,6 @@ const MultiModalLocationTracker = () => {
       for (let r of rows) {
         try {
           const body = {
-            userId: user?.id || 'anonymous',
             location: {
               latitude: r.latitude,
               longitude: r.longitude,
@@ -275,25 +296,29 @@ const MultiModalLocationTracker = () => {
             },
             landmarks: [],
           };
-          const resp = await fetch(`${API_BASE_URL}/api/user/location`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${token}`,
-            },
-            body: JSON.stringify(body),
-          });
-          if (resp.ok) syncedIds.push(r.id);
+
+          // Use authService for authenticated request
+          const result = await authService.authenticatedRequest(
+            '/api/user/location',
+            {
+              method: 'POST',
+              body: JSON.stringify(body),
+            }
+          );
+
+          if (result.success) {
+            syncedIds.push(r.id);
+          }
         } catch (e) {
-          console.warn('failed to sync row', r.id, e);
+          console.warn('Failed to sync row', r.id, e);
         }
       }
+
       if (syncedIds.length) await markRowsSynced(syncedIds);
     } catch (error) {
       console.error('syncWithBackend error:', error);
     }
   };
-
 
   const startSyncTimer = () => {
     if (syncTimer.current) return;
@@ -308,6 +333,15 @@ const MultiModalLocationTracker = () => {
       syncTimer.current = null;
     }
   };
+
+  // ---------- Load user on mount ----------
+  useEffect(() => {
+    const loadUser = async () => {
+      const userData = await authService.getUser();
+      setUser(userData);
+    };
+    loadUser();
+  }, []);
 
   // ---------- lifecycle ----------
   useEffect(() => {
@@ -354,7 +388,6 @@ const MultiModalLocationTracker = () => {
           type: state.type || "none",
         });
         if (previouslyDisconnected && nowOnline) {
-          // immediate sync on reconnect
           syncWithBackend();
         }
       });
@@ -639,7 +672,6 @@ const MultiModalLocationTracker = () => {
     };
     setCurrentLocation(fusedLocation);
     sensorData.current.lastPosition = { lat: filteredLat, lng: filteredLng };
-    // save locally (immediate)
     saveLocationLocally(fusedLocation);
   };
 
@@ -665,125 +697,135 @@ const MultiModalLocationTracker = () => {
     Object.values(locationSources).filter(
       (s) => s?.timestamp > Date.now() - SOURCE_TIMEOUT_MS
     ).length;
+
   const getSourceStatus = (source) =>
-    source?.timestamp > Date.now() - SOURCE_TIMEOUT_MS ? "âœ…" : "âŒ";
+    source?.timestamp > Date.now() - SOURCE_TIMEOUT_MS ? "✓" : "✗";
 
   return (
-  <ScrollView
-    style={styles.container}
-    contentContainerStyle={styles.contentContainer}
-  >
-    <Text style={styles.title}>📍 Multi-Modal Location Tracker</Text>
+    <ScrollView
+      style={styles.container}
+      contentContainerStyle={styles.contentContainer}
+    >
+      <Text style={styles.title}>Multi-Modal Location Tracker</Text>
 
-    <View style={styles.card}>
-      <Text style={styles.cardTitle}>🗺️ Current Location</Text>
-      <Text style={styles.coordinates}>
-        Lat: {currentLocation.latitude?.toFixed(6) ?? "⏳ Waiting..."}
-      </Text>
-      <Text style={styles.coordinates}>
-        Lng: {currentLocation.longitude?.toFixed(6) ?? "⏳ Waiting..."}
-      </Text>
-      <Text style={styles.accuracy}>
-        🎯 Accuracy:{" "}
-        {currentLocation.accuracy
-          ? `±${currentLocation.accuracy.toFixed(1)}m`
-          : "❌ No fix"}
-      </Text>
-    </View>
-
-    <View style={styles.card}>
-      <Text style={styles.cardTitle}>📶 Tracking Status</Text>
-      <Text style={styles.statusText}>
-        🌐 Network: {networkStatus.isConnected ? "🟢 Online" : "🔴 Offline"}{" "}
-        ({networkStatus.type})
-      </Text>
-      <Text style={styles.statusText}>
-        🔍 Active Sources: {getActiveSourcesCount()}/5
-      </Text>
-      <Text style={styles.statusText}>
-        🔐 Permission: {permissionGranted ? "🟢 Granted" : "🔴 Denied"}
-      </Text>
-      <Text style={styles.statusText}>
-        💾 Unsynced: {unsyncedCount} records
-      </Text>
-    </View>
-
-    <View style={styles.card}>
-      <Text style={styles.cardTitle}>🧭 Location Sources</Text>
-      <Text style={styles.sourceItem}>
-        {getSourceStatus(locationSources.gps)} GPS/AGPS{" "}
-        {locationSources.gps &&
-          ` (±${locationSources.gps.accuracy?.toFixed(0)}m)`}
-      </Text>
-      <Text style={styles.sourceItem}>
-        {getSourceStatus(locationSources.wifi)} WiFi Fingerprint{" "}
-        {locationSources.wifi &&
-          ` (±${locationSources.wifi.accuracy?.toFixed(0)}m)`}
-      </Text>
-      <Text style={styles.sourceItem}>
-        {getSourceStatus(locationSources.bluetooth)} Bluetooth Mesh{" "}
-        {locationSources.bluetooth &&
-          ` (±${locationSources.bluetooth.accuracy?.toFixed(0)}m)`}
-      </Text>
-      <Text style={styles.sourceItem}>
-        {getSourceStatus(locationSources.deadReckoning)} Dead Reckoning{" "}
-        {locationSources.deadReckoning &&
-          ` (±${locationSources.deadReckoning.accuracy?.toFixed(0)}m)`}
-      </Text>
-      <Text style={styles.sourceItem}>
-        {getSourceStatus(locationSources.beacon)} Beacon Detection{" "}
-        {locationSources.beacon &&
-          ` (±${locationSources.beacon.accuracy?.toFixed(0)}m)`}
-      </Text>
-    </View>
-
-    <View style={styles.card}>
-      <Text style={styles.cardTitle}>📊 Sensor Data</Text>
-      <Text style={styles.sensorText}>🚶 Steps: {sensorData.current.stepCount}</Text>
-      <Text style={styles.sensorText}>
-        🧭 Heading: {sensorData.current.heading.toFixed(1)}°
-      </Text>
-      <Text style={styles.sensorText}>
-        📈 Accel: X:{sensorData.current.acceleration.x.toFixed(2)} Y:
-        {sensorData.current.acceleration.y.toFixed(2)} Z:
-        {sensorData.current.acceleration.z.toFixed(2)}
-      </Text>
-    </View>
-
-    <View style={styles.card}>
-      <Text style={styles.cardTitle}>🧠 Debug Info</Text>
-      <Text style={styles.debugText}>
-        ⚙️ Tracking: {isTracking ? "✅ Active" : "⛔ Inactive"}
-      </Text>
-      <Text style={styles.debugText}>
-        ⏰ Last Update: {new Date().toLocaleTimeString()}
-      </Text>
-    </View>
-
-    <View style={styles.card}>
-      <Text style={styles.cardTitle}>🖥️ Backend Connection Test</Text>
-      <TouchableOpacity
-        style={{
-          backgroundColor: "#007AFF",
-          padding: 12,
-          borderRadius: 8,
-          alignItems: "center",
-          marginBottom: 10,
-        }}
-        onPress={testBackendConnection}
-      >
-        <Text style={{ color: "white", fontWeight: "600" }}>
-          🚀 Test Backend
-        </Text>
-      </TouchableOpacity>
-      {connectionTest && (
-        <Text style={styles.debugText}>{connectionTest}</Text>
+      {/* User Info Card */}
+      {user && (
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>👤 User</Text>
+          <Text style={styles.statusText}>
+            Username: {user.username}
+          </Text>
+          <Text style={styles.statusText}>
+            Email: {user.email}
+          </Text>
+        </View>
       )}
-    </View>
-  </ScrollView>
-);
 
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>📍 Current Location</Text>
+        <Text style={styles.coordinates}>
+          Lat: {currentLocation.latitude?.toFixed(6) ?? "Waiting..."}
+        </Text>
+        <Text style={styles.coordinates}>
+          Lng: {currentLocation.longitude?.toFixed(6) ?? "Waiting..."}
+        </Text>
+        <Text style={styles.accuracy}>
+          🎯 Accuracy:{" "}
+          {currentLocation.accuracy
+            ? `±${currentLocation.accuracy.toFixed(1)}m`
+            : "No fix"}
+        </Text>
+      </View>
+
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>📶 Tracking Status</Text>
+        <Text style={styles.statusText}>
+          📡 Network: {networkStatus.isConnected ? "🟢 Online" : "🔴 Offline"}{" "}
+          ({networkStatus.type})
+        </Text>
+        <Text style={styles.statusText}>
+          🔌 Active Sources: {getActiveSourcesCount()}/5
+        </Text>
+        <Text style={styles.statusText}>
+          📍 Permission: {permissionGranted ? "🟢 Granted" : "🔴 Denied"}
+        </Text>
+        <Text style={styles.statusText}>
+          💾 Unsynced: {unsyncedCount} records
+        </Text>
+      </View>
+
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>🧭 Location Sources</Text>
+        <Text style={styles.sourceItem}>
+          {getSourceStatus(locationSources.gps)} GPS/AGPS{" "}
+          {locationSources.gps &&
+            ` (±${locationSources.gps.accuracy?.toFixed(0)}m)`}
+        </Text>
+        <Text style={styles.sourceItem}>
+          {getSourceStatus(locationSources.wifi)} WiFi Fingerprint{" "}
+          {locationSources.wifi &&
+            ` (±${locationSources.wifi.accuracy?.toFixed(0)}m)`}
+        </Text>
+        <Text style={styles.sourceItem}>
+          {getSourceStatus(locationSources.bluetooth)} Bluetooth Mesh{" "}
+          {locationSources.bluetooth &&
+            ` (±${locationSources.bluetooth.accuracy?.toFixed(0)}m)`}
+        </Text>
+        <Text style={styles.sourceItem}>
+          {getSourceStatus(locationSources.deadReckoning)} Dead Reckoning{" "}
+          {locationSources.deadReckoning &&
+            ` (±${locationSources.deadReckoning.accuracy?.toFixed(0)}m)`}
+        </Text>
+        <Text style={styles.sourceItem}>
+          {getSourceStatus(locationSources.beacon)} Beacon Detection{" "}
+          {locationSources.beacon &&
+            ` (±${locationSources.beacon.accuracy?.toFixed(0)}m)`}
+        </Text>
+      </View>
+
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>📊 Sensor Data</Text>
+        <Text style={styles.sensorText}>
+          👣 Steps: {sensorData.current.stepCount}
+        </Text>
+        <Text style={styles.sensorText}>
+          🧭 Heading: {sensorData.current.heading.toFixed(1)}°
+        </Text>
+        <Text style={styles.sensorText}>
+          📈 Accel: X:{sensorData.current.acceleration.x.toFixed(2)} Y:
+          {sensorData.current.acceleration.y.toFixed(2)} Z:
+          {sensorData.current.acceleration.z.toFixed(2)}
+        </Text>
+      </View>
+
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>🧪 Debug Info</Text>
+        <Text style={styles.debugText}>
+          ⚡ Tracking: {isTracking ? "✓ Active" : "✗ Inactive"}
+        </Text>
+        <Text style={styles.debugText}>
+          ⏰ Last Update: {new Date().toLocaleTimeString()}
+        </Text>
+      </View>
+
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>🔗 Backend Connection Test</Text>
+        <TouchableOpacity
+          style={styles.testButton}
+          onPress={testBackendConnection}
+        >
+          <Text style={styles.testButtonText}>
+            🚀 Test Authenticated Connection
+          </Text>
+        </TouchableOpacity>
+        {connectionTest && (
+          <Text style={styles.debugText}>{connectionTest}</Text>
+        )}
+      </View>
+    </ScrollView>
+  );
 };
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -791,7 +833,7 @@ const styles = StyleSheet.create({
   },
   contentContainer: {
     padding: 20,
-    paddingBottom: 40, // Extra padding at bottom for scrolling
+    paddingBottom: 40,
   },
   title: {
     fontSize: 24,
@@ -823,12 +865,42 @@ const styles = StyleSheet.create({
     color: "#666",
     marginBottom: 5,
   },
-  accuracy: { fontSize: 14, color: "#888", fontStyle: "italic" },
-  statusText: { fontSize: 14, marginBottom: 5, color: "#666" },
-  sourceItem: { fontSize: 14, marginBottom: 5, color: "#666" },
-  sensorText: { fontSize: 14, marginBottom: 5, color: "#666" },
-  debugText: { fontSize: 12, marginBottom: 3, color: "#999" },
+  accuracy: {
+    fontSize: 14,
+    color: "#888",
+    fontStyle: "italic"
+  },
+  statusText: {
+    fontSize: 14,
+    marginBottom: 5,
+    color: "#666"
+  },
+  sourceItem: {
+    fontSize: 14,
+    marginBottom: 5,
+    color: "#666"
+  },
+  sensorText: {
+    fontSize: 14,
+    marginBottom: 5,
+    color: "#666"
+  },
+  debugText: {
+    fontSize: 12,
+    marginBottom: 3,
+    color: "#999"
+  },
+  testButton: {
+    backgroundColor: "#007AFF",
+    padding: 12,
+    borderRadius: 8,
+    alignItems: "center",
+    marginBottom: 10,
+  },
+  testButtonText: {
+    color: "white",
+    fontWeight: "600",
+  },
 });
-
 
 export default MultiModalLocationTracker;
