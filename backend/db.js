@@ -46,7 +46,7 @@ const decrypt = (encryptedData) => {
 
 // --- SCHEMAS ---
 
-// User Schema
+// User Schema - UPDATED with role
 const userSchema = new mongoose.Schema({
   email: {
     type: String,
@@ -64,6 +64,11 @@ const userSchema = new mongoose.Schema({
   password: {
     type: String,
     required: true
+  },
+  role: {
+    type: String,
+    enum: ['user', 'mechanic'],
+    default: 'user'
   },
   createdAt: {
     type: Date,
@@ -92,40 +97,119 @@ locationHistorySchema.virtual('location').get(function() {
 locationHistorySchema.set('toJSON', { virtuals: true });
 locationHistorySchema.set('toObject', { virtuals: true });
 
-// Mechanic Schema
+// Mechanic Schema - UPDATED with userId reference
 const mechanicSchema = new mongoose.Schema({
-  name: String,
-  phone: String,
-  location: {
-    type: { type: String, default: 'Point' },
-    coordinates: [Number]
+  userId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: true,
+    unique: true,
+    index: true
   },
-  specialties: [String],
-  rating: Number,
-  available: { type: Boolean, default: true }
+  name: {
+    type: String,
+    required: true
+  },
+  phone: {
+    type: String,
+    required: true
+  },
+  location: {
+    type: {
+      type: String,
+      default: 'Point',
+      enum: ['Point']
+    },
+    coordinates: {
+      type: [Number],
+      required: true
+    }
+  },
+  specialties: {
+    type: [String],
+    default: []
+  },
+  rating: {
+    type: Number,
+    default: 0,
+    min: 0,
+    max: 5
+  },
+  available: {
+    type: Boolean,
+    default: true
+  },
+  createdAt: {
+    type: Date,
+    default: Date.now
+  }
 });
 
 mechanicSchema.index({ location: '2dsphere' });
 
+// NEW: Landmark Schema
+const landmarkSchema = new mongoose.Schema({
+  userId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: true,
+    index: true
+  },
+  name: {
+    type: String,
+    required: true,
+    trim: true
+  },
+  description: {
+    type: String,
+    trim: true
+  },
+  category: {
+    type: String,
+    required: true,
+    enum: ['restaurant', 'gas_station', 'hospital', 'parking', 'landmark', 'shop', 'other'],
+    default: 'other'
+  },
+  location: {
+    type: {
+      type: String,
+      default: 'Point',
+      enum: ['Point']
+    },
+    coordinates: {
+      type: [Number],
+      required: true
+    }
+  },
+  verified: {
+    type: Boolean,
+    default: false
+  },
+  createdAt: {
+    type: Date,
+    default: Date.now
+  }
+});
+
+landmarkSchema.index({ location: '2dsphere' });
+landmarkSchema.index({ category: 1 });
+
 // --- MODELS ---
-// Use mongoose.models to prevent model redefinition in serverless
 const User = mongoose.models.User || mongoose.model('User', userSchema);
 const LocationHistory = mongoose.models.LocationHistory || mongoose.model('LocationHistory', locationHistorySchema);
 const Mechanic = mongoose.models.Mechanic || mongoose.model('Mechanic', mechanicSchema);
+const Landmark = mongoose.models.Landmark || mongoose.model('Landmark', landmarkSchema);
 
 // --- CONNECTION ---
-// Cache for serverless to reuse connections
 let cachedConnection = null;
 
 export const connectDB = async () => {
   try {
-    // Return cached connection if available
     if (cachedConnection && mongoose.connection.readyState === 1) {
       console.log('✓ Using cached MongoDB connection');
       return cachedConnection;
     }
 
-    // If currently connecting, wait for it
     if (mongoose.connection.readyState === 2) {
       console.log('⏳ Waiting for existing connection...');
       await new Promise((resolve, reject) => {
@@ -149,13 +233,11 @@ export const connectDB = async () => {
 
     console.log('🔌 Creating new MongoDB connection...');
 
-    // Serverless-optimized connection options
     await mongoose.connect(process.env.MONGODB_URI, {
       serverSelectionTimeoutMS: 5000,
       socketTimeoutMS: 45000,
       maxPoolSize: 10,
       minPoolSize: 1,
-      // Important for serverless: don't buffer commands
       bufferCommands: false,
     });
 
@@ -172,7 +254,7 @@ export const connectDB = async () => {
 
 // --- FUNCTIONS ---
 
-// Updated to use authenticated userId
+// Location Functions
 export const updateUserLocation = async (userId, location, landmarks = []) => {
   await connectDB();
 
@@ -183,7 +265,6 @@ export const updateUserLocation = async (userId, location, landmarks = []) => {
     timestamp: new Date()
   });
 
-  // Save to location history
   const locationDoc = new LocationHistory({
     userId,
     encryptedLocation,
@@ -201,6 +282,7 @@ export const getUserLocationHistory = async (userId, limit = 50) => {
     .limit(limit);
 };
 
+// Mechanic Functions
 export const getNearbyMechanics = async (lat, lng, radius = 5000) => {
   await connectDB();
   return await Mechanic.find({
@@ -211,7 +293,87 @@ export const getNearbyMechanics = async (lat, lng, radius = 5000) => {
       }
     },
     available: true
-  }).limit(20);
+  })
+  .populate('userId', 'username email')
+  .limit(20);
+};
+
+export const createMechanicProfile = async (userId, mechanicData) => {
+  await connectDB();
+
+  // Check if user already has a mechanic profile
+  const existingProfile = await Mechanic.findOne({ userId });
+  if (existingProfile) {
+    throw new Error('Mechanic profile already exists for this user');
+  }
+
+  const mechanic = new Mechanic({
+    userId,
+    name: mechanicData.name,
+    phone: mechanicData.phone,
+    location: {
+      type: 'Point',
+      coordinates: [mechanicData.longitude, mechanicData.latitude]
+    },
+    specialties: mechanicData.specialties || [],
+    available: mechanicData.available !== undefined ? mechanicData.available : true
+  });
+
+  return await mechanic.save();
+};
+
+export const updateMechanicLocation = async (userId, latitude, longitude) => {
+  await connectDB();
+
+  return await Mechanic.findOneAndUpdate(
+    { userId },
+    {
+      location: {
+        type: 'Point',
+        coordinates: [longitude, latitude]
+      }
+    },
+    { new: true }
+  );
+};
+
+// Landmark Functions
+export const createLandmark = async (userId, landmarkData) => {
+  await connectDB();
+
+  const landmark = new Landmark({
+    userId,
+    name: landmarkData.name,
+    description: landmarkData.description || '',
+    category: landmarkData.category || 'other',
+    location: {
+      type: 'Point',
+      coordinates: [landmarkData.longitude, landmarkData.latitude]
+    }
+  });
+
+  return await landmark.save();
+};
+
+export const getNearbyLandmarks = async (lat, lng, radius = 5000, category = null) => {
+  await connectDB();
+
+  const query = {
+    location: {
+      $near: {
+        $geometry: { type: 'Point', coordinates: [lng, lat] },
+        $maxDistance: radius
+      }
+    }
+  };
+
+  if (category) {
+    query.category = category;
+  }
+
+  return await Landmark.find(query)
+    .populate('userId', 'username')
+    .limit(50);
 };
 
 export const getLandmarksNearLocation = async (lat, lng, radius = 1000) => {
@@ -240,4 +402,4 @@ export const getLandmarksNearLocation = async (lat, lng, radius = 1000) => {
   return Array.from(landmarks);
 };
 
-export { LocationHistory, Mechanic, User };
+export { Landmark, LocationHistory, Mechanic, User };

@@ -6,9 +6,9 @@ import { User } from './db.js';
 const JWT_SECRET = process.env.JWT_SECRET || 'dbe243a582f6059d0d47b360e55627645cb7fa96149a85c093d5d7ae663d42124bb9f5c6354f7fd6fd86c0d78a9c76b3e80de99ac33458064de2b76329beab4';
 const JWT_EXPIRES_IN = '7d';
 
-// Helper to generate JWT token
-export const generateToken = (userId) => {
-  return jwt.sign({ userId }, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
+// Helper to generate JWT token - UPDATED to include role
+export const generateToken = (userId, role) => {
+  return jwt.sign({ userId, role }, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
 };
 
 // Helper to verify JWT token
@@ -20,10 +20,10 @@ export const verifyToken = (token) => {
   }
 };
 
-// Signup handler
+// Signup handler - UPDATED to support role selection
 export const signup = async (req, res) => {
   try {
-    const { email, username, password } = req.body;
+    const { email, username, password, role } = req.body;
 
     // Validation
     if (!email || !username || !password) {
@@ -37,6 +37,9 @@ export const signup = async (req, res) => {
         error: 'Password must be at least 6 characters'
       });
     }
+
+    // Validate role
+    const userRole = role && ['user', 'mechanic'].includes(role) ? role : 'user';
 
     // Check if user already exists
     const existingUser = await User.findOne({
@@ -57,13 +60,14 @@ export const signup = async (req, res) => {
       email,
       username,
       password: hashedPassword,
+      role: userRole,
       createdAt: new Date()
     });
 
     await user.save();
 
-    // Generate token
-    const token = generateToken(user._id.toString());
+    // Generate token with role
+    const token = generateToken(user._id.toString(), user.role);
 
     res.status(201).json({
       success: true,
@@ -72,6 +76,7 @@ export const signup = async (req, res) => {
         id: user._id,
         email: user.email,
         username: user.username,
+        role: user.role,
         createdAt: user.createdAt
       }
     });
@@ -81,7 +86,7 @@ export const signup = async (req, res) => {
   }
 };
 
-// Login handler
+// Login handler - UPDATED to include role in token
 export const login = async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -109,8 +114,8 @@ export const login = async (req, res) => {
       });
     }
 
-    // Generate token
-    const token = generateToken(user._id.toString());
+    // Generate token with role
+    const token = generateToken(user._id.toString(), user.role);
 
     res.json({
       success: true,
@@ -119,6 +124,7 @@ export const login = async (req, res) => {
         id: user._id,
         email: user.email,
         username: user.username,
+        role: user.role,
         createdAt: user.createdAt
       }
     });
@@ -144,6 +150,7 @@ export const getCurrentUser = async (req, res) => {
         id: user._id,
         email: user.email,
         username: user.username,
+        role: user.role,
         createdAt: user.createdAt
       }
     });

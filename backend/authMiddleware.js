@@ -25,8 +25,9 @@ export const authenticateToken = (req, res, next) => {
       });
     }
 
-    // Attach userId to request object
+    // Attach userId and role to request object
     req.userId = decoded.userId;
+    req.userRole = decoded.role;
     next();
   } catch (error) {
     console.error('Auth middleware error:', error);
@@ -44,6 +45,7 @@ export const optionalAuth = (req, res, next) => {
       const decoded = verifyToken(token);
       if (decoded) {
         req.userId = decoded.userId;
+        req.userRole = decoded.role;
       }
     }
 
@@ -52,4 +54,36 @@ export const optionalAuth = (req, res, next) => {
     console.error('Optional auth error:', error);
     next();
   }
+};
+
+// NEW: Middleware to check if user has a specific role
+export const requireRole = (...allowedRoles) => {
+  return (req, res, next) => {
+    if (!req.userRole) {
+      return res.status(401).json({
+        error: 'Authentication required',
+        code: 'NO_ROLE'
+      });
+    }
+
+    if (!allowedRoles.includes(req.userRole)) {
+      return res.status(403).json({
+        error: `Access denied. Required role: ${allowedRoles.join(' or ')}`,
+        code: 'INSUFFICIENT_PERMISSIONS'
+      });
+    }
+
+    next();
+  };
+};
+
+// NEW: Middleware to check if user is a mechanic
+export const requireMechanic = (req, res, next) => {
+  if (req.userRole !== 'mechanic') {
+    return res.status(403).json({
+      error: 'This action is only available to mechanics',
+      code: 'MECHANIC_ONLY'
+    });
+  }
+  next();
 };
