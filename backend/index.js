@@ -7,7 +7,9 @@ import { getCurrentUser, login, signup } from './auth.js';
 import { authenticateToken, optionalAuth, requireMechanic } from './authMiddleware.js';
 import {
   createLandmarkHandler,
-  getNearbyLandmarksHandler
+  deleteLandmarkHandler,
+  getNearbyLandmarksHandler,
+  syncOpenStreetMapHandler
 } from './controllers/landmarkController.js';
 import {
   createMechanicProfileHandler,
@@ -75,7 +77,6 @@ app.get('/api/auth/me', authenticateToken, getCurrentUser);
 
 // === USER LOCATION ROUTES (Protected) ===
 
-// Update user location (authenticated users)
 app.post('/api/user/location', authenticateToken, async (req, res) => {
   try {
     const { location, landmarks } = req.body;
@@ -92,7 +93,6 @@ app.post('/api/user/location', authenticateToken, async (req, res) => {
   }
 });
 
-// Get user's location history
 app.get('/api/user/location-history', authenticateToken, async (req, res) => {
   try {
     const limit = req.query.limit ? parseInt(req.query.limit) : 50;
@@ -105,14 +105,21 @@ app.get('/api/user/location-history', authenticateToken, async (req, res) => {
 });
 
 // === LANDMARK ROUTES ===
+// CRITICAL: This route MUST come BEFORE the /:id route to avoid conflicts
 
-// Create a new landmark (authenticated users)
-app.post('/api/landmarks', authenticateToken, createLandmarkHandler);
+// Sync OpenStreetMap (authenticated users) - SPECIFIC ROUTE FIRST
+app.post('/api/landmarks/sync-osm', authenticateToken, syncOpenStreetMapHandler);
 
 // Get nearby landmarks (public with optional auth)
 app.get('/api/landmarks/nearby', optionalAuth, getNearbyLandmarksHandler);
 
-// Get landmarks near location (legacy endpoint - kept for compatibility)
+// Create a new landmark (authenticated users)
+app.post('/api/landmarks', authenticateToken, createLandmarkHandler);
+
+// Delete a landmark (authenticated, creator only)
+app.delete('/api/landmarks/:id', authenticateToken, deleteLandmarkHandler);
+
+// Get landmarks near location (legacy endpoint)
 app.get('/api/landmarks', async (req, res) => {
   try {
     const { lat, lng, radius } = req.query;
@@ -134,7 +141,6 @@ app.get('/api/landmarks', async (req, res) => {
 
 // === MECHANIC ROUTES ===
 
-// Create mechanic profile (mechanic role required)
 app.post(
   '/api/mechanics/profile',
   authenticateToken,
@@ -142,7 +148,6 @@ app.post(
   createMechanicProfileHandler
 );
 
-// Get own mechanic profile
 app.get(
   '/api/mechanics/profile',
   authenticateToken,
@@ -150,7 +155,6 @@ app.get(
   getMechanicProfileHandler
 );
 
-// Update mechanic location
 app.patch(
   '/api/mechanics/location',
   authenticateToken,
@@ -158,7 +162,6 @@ app.patch(
   updateMechanicLocationHandler
 );
 
-// Update mechanic availability
 app.patch(
   '/api/mechanics/availability',
   authenticateToken,
@@ -166,12 +169,10 @@ app.patch(
   updateMechanicAvailabilityHandler
 );
 
-// Get nearby mechanics (public with optional auth)
 app.get('/api/mechanics/nearby', optionalAuth, getNearbyMechanicsHandler);
 
 // === ERROR HANDLING ===
 
-// 404 handler
 app.use((req, res) => {
   res.status(404).json({
     error: 'Endpoint not found',
@@ -179,7 +180,6 @@ app.use((req, res) => {
   });
 });
 
-// Global error handler
 app.use((err, req, res, next) => {
   console.error('Global error:', err);
   res.status(500).json({
@@ -197,7 +197,7 @@ if (process.argv[1] === new URL(import.meta.url).pathname) {
       app.listen(PORT, () => {
         console.log('✅ MongoDB connected');
         console.log(`🚀 Server running on http://localhost:${PORT}`);
-        console.log(`📍 Environment: ${process.env.NODE_ENV || 'development'}`);
+        console.log(`📝 Environment: ${process.env.NODE_ENV || 'development'}`);
       });
     })
     .catch((error) => {

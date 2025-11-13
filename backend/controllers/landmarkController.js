@@ -4,28 +4,23 @@ import { createLandmark, getNearbyLandmarks, Landmark } from '../db.js';
 
 /**
  * Create a new landmark
- * POST /api/landmarks
- * Body: { name, description, category, latitude, longitude }
  */
 export const createLandmarkHandler = async (req, res) => {
   try {
     const { name, description, category, latitude, longitude } = req.body;
 
-    // Validation
     if (!name || !latitude || !longitude) {
       return res.status(400).json({
         error: 'Name, latitude, and longitude are required'
       });
     }
 
-    // Validate coordinates
     if (latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) {
       return res.status(400).json({
         error: 'Invalid coordinates'
       });
     }
 
-    // Validate category if provided
     const validCategories = ['restaurant', 'gas_station', 'hospital', 'parking', 'landmark', 'shop', 'other'];
     if (category && !validCategories.includes(category)) {
       return res.status(400).json({
@@ -33,7 +28,6 @@ export const createLandmarkHandler = async (req, res) => {
       });
     }
 
-    // Create landmark
     const landmark = await createLandmark(req.userId, {
       name,
       description,
@@ -54,6 +48,7 @@ export const createLandmarkHandler = async (req, res) => {
           longitude: landmark.location.coordinates[0]
         },
         verified: landmark.verified,
+        createdBy: landmark.userId,
         createdAt: landmark.createdAt
       }
     });
@@ -64,14 +59,12 @@ export const createLandmarkHandler = async (req, res) => {
 };
 
 /**
- * Get landmarks near a location
- * GET /api/landmarks/nearby?lat=23.0225&lng=70.77&radius=5000&category=restaurant
+ * Get nearby landmarks
  */
 export const getNearbyLandmarksHandler = async (req, res) => {
   try {
     const { lat, lng, radius, category } = req.query;
 
-    // Validation
     if (!lat || !lng) {
       return res.status(400).json({
         error: 'Latitude and longitude are required'
@@ -87,7 +80,7 @@ export const getNearbyLandmarksHandler = async (req, res) => {
       });
     }
 
-    const searchRadius = radius ? parseInt(radius) : 5000; // Default 5km
+    const searchRadius = radius ? parseInt(radius) : 5000;
     const landmarks = await getNearbyLandmarks(
       latitude,
       longitude,
@@ -95,7 +88,6 @@ export const getNearbyLandmarksHandler = async (req, res) => {
       category || null
     );
 
-    // Transform response to more readable format
     const transformedLandmarks = landmarks.map(landmark => ({
       id: landmark._id,
       name: landmark.name,
@@ -106,7 +98,8 @@ export const getNearbyLandmarksHandler = async (req, res) => {
         longitude: landmark.location.coordinates[0]
       },
       verified: landmark.verified,
-      createdBy: landmark.userId?.username || 'Unknown',
+      createdBy: landmark.userId?._id || 'Unknown',
+      createdByUsername: landmark.userId?.username || 'Unknown',
       createdAt: landmark.createdAt
     }));
 
@@ -122,9 +115,42 @@ export const getNearbyLandmarksHandler = async (req, res) => {
 };
 
 /**
+ * NEW: Delete a landmark (creator only)
+ * DELETE /api/landmarks/:id
+ */
+export const deleteLandmarkHandler = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const landmark = await Landmark.findById(id);
+
+    if (!landmark) {
+      return res.status(404).json({
+        error: 'Landmark not found'
+      });
+    }
+
+    // Check if the user is the creator
+    if (landmark.userId.toString() !== req.userId) {
+      return res.status(403).json({
+        error: 'You can only delete landmarks you created'
+      });
+    }
+
+    await Landmark.findByIdAndDelete(id);
+
+    res.json({
+      success: true,
+      message: 'Landmark deleted successfully'
+    });
+  } catch (error) {
+    console.error('Delete landmark error:', error);
+    res.status(500).json({ error: 'Failed to delete landmark' });
+  }
+};
+
+/**
  * Sync OpenStreetMap places to database
- * POST /api/landmarks/sync-osm
- * Body: { latitude, longitude, radius }
  */
 export const syncOpenStreetMapHandler = async (req, res) => {
   try {
@@ -136,11 +162,10 @@ export const syncOpenStreetMapHandler = async (req, res) => {
       });
     }
 
-    const searchRadius = radius || 5000; // Default 5km
+    const searchRadius = radius || 5000;
     const lat = parseFloat(latitude);
     const lng = parseFloat(longitude);
 
-    // Category mapping: OpenStreetMap -> Our categories
     const categoryMapping = {
       'restaurant': 'restaurant',
       'cafe': 'restaurant',
@@ -161,7 +186,6 @@ export const syncOpenStreetMapHandler = async (req, res) => {
       'convenience': 'shop'
     };
 
-    // Overpass API query to get POIs
     const overpassQuery = `
       [out:json][timeout:25];
       (
@@ -184,7 +208,7 @@ export const syncOpenStreetMapHandler = async (req, res) => {
     );
 
     const elements = response.data.elements || [];
-    console.log(`📍 Found ${elements.length} places from OSM`);
+    console.log(`🔍 Found ${elements.length} places from OSM`);
 
     let synced = 0;
     let duplicate = 0;
@@ -192,7 +216,6 @@ export const syncOpenStreetMapHandler = async (req, res) => {
 
     for (const element of elements) {
       try {
-        // Skip if no name
         if (!element.tags?.name) {
           failed++;
           continue;
@@ -201,7 +224,6 @@ export const syncOpenStreetMapHandler = async (req, res) => {
         const osmCategory = element.tags.amenity || element.tags.tourism || element.tags.shop;
         const ourCategory = categoryMapping[osmCategory] || 'other';
 
-        // Check if landmark already exists (by name and approximate location)
         const existing = await Landmark.findOne({
           name: element.tags.name,
           'location.coordinates': {
@@ -210,7 +232,7 @@ export const syncOpenStreetMapHandler = async (req, res) => {
                 type: 'Point',
                 coordinates: [element.lon, element.lat]
               },
-              $maxDistance: 50 // 50 meters tolerance
+              $maxDistance: 50
             }
           }
         });
@@ -220,7 +242,6 @@ export const syncOpenStreetMapHandler = async (req, res) => {
           continue;
         }
 
-        // Create new landmark
         await createLandmark(req.userId, {
           name: element.tags.name,
           description: element.tags.description || `${osmCategory || 'Place'} from OpenStreetMap`,
