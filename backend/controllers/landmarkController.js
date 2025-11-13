@@ -1,5 +1,6 @@
 // backend/controllers/landmarkController.js
-import { createLandmark, getNearbyLandmarks } from '../db.js';
+import axios from 'axios';
+import { createLandmark, getNearbyLandmarks, Landmark } from '../db.js';
 
 /**
  * Create a new landmark
@@ -117,5 +118,145 @@ export const getNearbyLandmarksHandler = async (req, res) => {
   } catch (error) {
     console.error('Get nearby landmarks error:', error);
     res.status(500).json({ error: 'Failed to get landmarks' });
+  }
+};
+
+/**
+ * Sync OpenStreetMap places to database
+ * POST /api/landmarks/sync-osm
+ * Body: { latitude, longitude, radius }
+ */
+export const syncOpenStreetMapHandler = async (req, res) => {
+  try {
+    const { latitude, longitude, radius } = req.body;
+
+    if (!latitude || !longitude) {
+      return res.status(400).json({
+        error: 'Latitude and longitude are required'
+      });
+    }
+
+    const searchRadius = radius || 5000; // Default 5km
+    const lat = parseFloat(latitude);
+    const lng = parseFloat(longitude);
+
+    // Category mapping: OpenStreetMap -> Our categories
+    const categoryMapping = {
+      'restaurant': 'restaurant',
+      'cafe': 'restaurant',
+      'fast_food': 'restaurant',
+      'fuel': 'gas_station',
+      'hospital': 'hospital',
+      'clinic': 'hospital',
+      'doctors': 'hospital',
+      'pharmacy': 'hospital',
+      'parking': 'parking',
+      'monument': 'landmark',
+      'memorial': 'landmark',
+      'attraction': 'landmark',
+      'viewpoint': 'landmark',
+      'shop': 'shop',
+      'supermarket': 'shop',
+      'mall': 'shop',
+      'convenience': 'shop'
+    };
+
+    // Overpass API query to get POIs
+    const overpassQuery = `
+      [out:json][timeout:25];
+      (
+        node["amenity"](around:${searchRadius},${lat},${lng});
+        node["tourism"](around:${searchRadius},${lat},${lng});
+        node["shop"](around:${searchRadius},${lat},${lng});
+      );
+      out body;
+    `;
+
+    console.log('🌍 Fetching from OpenStreetMap...');
+
+    const response = await axios.post(
+      'https://overpass-api.de/api/interpreter',
+      overpassQuery,
+      {
+        headers: { 'Content-Type': 'text/plain' },
+        timeout: 30000
+      }
+    );
+
+    const elements = response.data.elements || [];
+    console.log(`📍 Found ${elements.length} places from OSM`);
+
+    let synced = 0;
+    let duplicate = 0;
+    let failed = 0;
+
+    for (const element of elements) {
+      try {
+        // Skip if no name
+        if (!element.tags?.name) {
+          failed++;
+          continue;
+        }
+
+        const osmCategory = element.tags.amenity || element.tags.tourism || element.tags.shop;
+        const ourCategory = categoryMapping[osmCategory] || 'other';
+
+        // Check if landmark already exists (by name and approximate location)
+        const existing = await Landmark.findOne({
+          name: element.tags.name,
+          'location.coordinates': {
+            $near: {
+              $geometry: {
+                type: 'Point',
+                coordinates: [element.lon, element.lat]
+              },
+              $maxDistance: 50 // 50 meters tolerance
+            }
+          }
+        });
+
+        if (existing) {
+          duplicate++;
+          continue;
+        }
+
+        // Create new landmark
+        await createLandmark(req.userId, {
+          name: element.tags.name,
+          description: element.tags.description || `${osmCategory || 'Place'} from OpenStreetMap`,
+          category: ourCategory,
+          latitude: element.lat,
+          longitude: element.lon
+        });
+
+        synced++;
+      } catch (error) {
+        console.error(`Failed to sync place ${element.tags?.name}:`, error.message);
+        failed++;
+      }
+    }
+
+    console.log(`✅ Sync complete: ${synced} synced, ${duplicate} duplicates, ${failed} failed`);
+
+    res.json({
+      success: true,
+      synced,
+      duplicate,
+      failed,
+      total: elements.length
+    });
+  } catch (error) {
+    console.error('OpenStreetMap sync error:', error);
+
+    if (error.code === 'ECONNABORTED' || error.message.includes('timeout')) {
+      return res.status(504).json({
+        error: 'Request to OpenStreetMap timed out. Try a smaller radius.'
+      });
+    }
+
+    res.status(500).json({
+      error: 'Failed to sync with OpenStreetMap',
+      details: error.message
+    });
   }
 };
