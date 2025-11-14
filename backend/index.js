@@ -2,6 +2,7 @@
 import cors from 'cors';
 import dotenv from 'dotenv';
 import express from 'express';
+import rateLimit from 'express-rate-limit';
 import mongoose from 'mongoose';
 import { getCurrentUser, login, signup } from './auth.js';
 import { authenticateToken, optionalAuth, requireMechanic } from './authMiddleware.js';
@@ -24,8 +25,21 @@ import {
   getUserLocationHistory,
   updateUserLocation
 } from './db.js';
+const limiter =rateLimit({
+  windowMs: 15*60*1000,
+  max:100,
+  message:'Too many requests, please try again later.'
+});
 
+
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  message: 'Too many authentication attempts, please try again later.',
+  skipSuccessfulRequests:true
+});
 dotenv.config();
+app.use(limiter);
 
 const app = express();
 app.use(cors());
@@ -71,8 +85,8 @@ app.get('/api/health', (req, res) => {
 
 // === AUTH ROUTES ===
 
-app.post('/api/auth/signup', signup);
-app.post('/api/auth/login', login);
+app.post('/api/auth/signup',authLimiter, signup);
+app.post('/api/auth/login',authLimiter, login);
 app.get('/api/auth/me', authenticateToken, getCurrentUser);
 
 // === USER LOCATION ROUTES (Protected) ===
