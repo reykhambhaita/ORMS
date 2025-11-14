@@ -3,7 +3,11 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { Mechanic, User } from './db.js';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'dbe243a582f6059d0d47b360e55627645cb7fa96149a85c093d5d7ae663d42124bb9f5c6354f7fd6fd86c0d78a9c76b3e80de99ac33458064de2b76329beab4';
+const JWT_SECRET = process.env.JWT_SECRET;
+if(!JWT_SECRET){
+  console.error("JWT_SECRET is not defined in environment variables");
+  process.exit(1);
+}
 const JWT_EXPIRES_IN = '7d';
 
 export const generateToken = (userId, role) => {

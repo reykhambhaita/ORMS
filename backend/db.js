@@ -3,7 +3,15 @@ import crypto from 'crypto';
 import mongoose from 'mongoose';
 
 // --- ENCRYPTION SETUP ---
-const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || crypto.randomBytes(32).toString('hex');
+const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY;
+if(!ENCRYPTION_KEY){
+  console.error("ENCRYPTION_KEY is not defined in environment variables");
+  process.exit(1);
+}
+if(buffer.from(ENCRYPTION_KEY, 'hex').length !== 32){
+  console.error("ENCRYPTION_KEY must be 32 bytes (64 hex characters) long");
+  process.exit(1);
+}
 const ALGORITHM = 'aes-256-gcm';
 const IV_LENGTH = 16;
 
