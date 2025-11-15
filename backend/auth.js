@@ -22,7 +22,7 @@ export const verifyToken = (token) => {
   }
 };
 
-// UPDATED: Signup handler with automatic mechanic profile creation
+// FIXED: Proper mechanic profile creation without duplicate storage
 export const signup = async (req, res) => {
   try {
     const { email, username, password, role, mechanicData } = req.body;
@@ -55,7 +55,7 @@ export const signup = async (req, res) => {
     // Hash password
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    // Create user
+    // Create user (NOT mechanic in same collection)
     const user = new User({
       email,
       username,
@@ -66,26 +66,46 @@ export const signup = async (req, res) => {
 
     await user.save();
 
-    // NEW: If mechanic role, create mechanic profile automatically
+    console.log(`✅ User created: ${user._id} (${userRole})`);
+
+    // CRITICAL: Create mechanic profile in SEPARATE collection ONLY if mechanic role
     let mechanicProfile = null;
     if (userRole === 'mechanic') {
-      // Create mechanic profile with default or provided data
+      // Validate mechanic data
+      if (!mechanicData?.phone) {
+        await User.findByIdAndDelete(user._id);
+        return res.status(400).json({
+          error: 'Phone number is required for mechanics'
+        });
+      }
+
+      if (!mechanicData?.latitude || !mechanicData?.longitude) {
+        await User.findByIdAndDelete(user._id);
+        return res.status(400).json({
+          error: 'Location is required for mechanics'
+        });
+      }
+
+      // Create mechanic profile in MECHANICS collection (separate from User)
       mechanicProfile = new Mechanic({
-        userId: user._id,
-        name: mechanicData?.name || username,
-        phone: mechanicData?.phone || '',
+        userId: user._id,  // Reference to User, not duplicating user data
+        name: mechanicData.name || username,
+        phone: mechanicData.phone,
         location: {
           type: 'Point',
           coordinates: [
-            mechanicData?.longitude || 70.77, // Default Rajkot lng
-            mechanicData?.latitude || 23.0225  // Default Rajkot lat
+            parseFloat(mechanicData.longitude),
+            parseFloat(mechanicData.latitude)
           ]
         },
-        specialties: mechanicData?.specialties || [],
-        available: mechanicData?.available !== undefined ? mechanicData.available : true
+        specialties: Array.isArray(mechanicData.specialties) ? mechanicData.specialties : [],
+        available: mechanicData.available !== false,
+        rating: 0,
+        createdAt: new Date()
       });
 
       await mechanicProfile.save();
+      console.log(`✅ Mechanic profile created: ${mechanicProfile._id} for user ${user._id}`);
     }
 
     const token = generateToken(user._id.toString(), user.role);
@@ -109,16 +129,17 @@ export const signup = async (req, res) => {
           longitude: mechanicProfile.location.coordinates[0]
         },
         specialties: mechanicProfile.specialties,
+        rating: mechanicProfile.rating,
         available: mechanicProfile.available
       } : null
     });
   } catch (error) {
     console.error('Signup error:', error);
-    res.status(500).json({ error: 'Failed to create user' });
+    res.status(500).json({ error: 'Failed to create user', details: error.message });
   }
 };
 
-// Login handler - UPDATED to include mechanic profile if applicable
+// Login handler - FIXED to properly fetch mechanic profile
 export const login = async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -129,6 +150,7 @@ export const login = async (req, res) => {
       });
     }
 
+    // Find user in USERS collection only
     const user = await User.findOne({ email });
     if (!user) {
       return res.status(401).json({
@@ -143,10 +165,16 @@ export const login = async (req, res) => {
       });
     }
 
-    // NEW: Fetch mechanic profile if user is a mechanic
+    // Fetch mechanic profile from MECHANICS collection (separate)
     let mechanicProfile = null;
     if (user.role === 'mechanic') {
       mechanicProfile = await Mechanic.findOne({ userId: user._id });
+
+      if (mechanicProfile) {
+        console.log(`✅ Mechanic profile loaded: ${mechanicProfile._id}`);
+      } else {
+        console.warn(`⚠️ Mechanic profile not found for user ${user._id}`);
+      }
     }
 
     const token = generateToken(user._id.toString(), user.role);
@@ -170,6 +198,7 @@ export const login = async (req, res) => {
           longitude: mechanicProfile.location.coordinates[0]
         },
         specialties: mechanicProfile.specialties,
+        rating: mechanicProfile.rating,
         available: mechanicProfile.available
       } : null
     });
@@ -187,7 +216,7 @@ export const getCurrentUser = async (req, res) => {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    // NEW: Fetch mechanic profile if user is a mechanic
+    // Fetch mechanic profile from MECHANICS collection
     let mechanicProfile = null;
     if (user.role === 'mechanic') {
       mechanicProfile = await Mechanic.findOne({ userId: user._id });
@@ -211,6 +240,7 @@ export const getCurrentUser = async (req, res) => {
           longitude: mechanicProfile.location.coordinates[0]
         },
         specialties: mechanicProfile.specialties,
+        rating: mechanicProfile.rating,
         available: mechanicProfile.available
       } : null
     });
