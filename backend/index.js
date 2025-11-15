@@ -26,40 +26,31 @@ import {
   updateUserLocation
 } from './db.js';
 
-dotenv.config();
 
 const app = express();
-
-// ============================================
-// CRITICAL: Enable trust proxy BEFORE any middleware
-// This fixes the rate limiter X-Forwarded-For errors
-// ============================================
-app.set('trust proxy', true);
-
-// Basic middleware
 app.use(cors());
 app.use(express.json());
 
-// Rate limiters with proper proxy configuration
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100,
-  message: 'Too many requests, please try again later.',
-  standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
-  legacyHeaders: false, // Disable the `X-RateLimit-*` headers
+
+const limiter =rateLimit({
+  windowMs: 15*60*1000,
+  max:100,
+  message:'Too many requests, please try again later.'
 });
+
+app.use(cors());
+app.use(express.json());
 
 const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
+  windowMs: 15 * 60 * 1000,
   max: 5,
   message: 'Too many authentication attempts, please try again later.',
-  skipSuccessfulRequests: true,
-  standardHeaders: true,
-  legacyHeaders: false,
+  skipSuccessfulRequests:true
 });
-
-// Apply global rate limiter
+dotenv.config();
 app.use(limiter);
+
+
 
 // Database connection middleware
 app.use(async (req, res, next) => {
@@ -101,8 +92,8 @@ app.get('/api/health', (req, res) => {
 
 // === AUTH ROUTES ===
 
-app.post('/api/auth/signup', authLimiter, signup);
-app.post('/api/auth/login', authLimiter, login);
+app.post('/api/auth/signup',authLimiter, signup);
+app.post('/api/auth/login',authLimiter, login);
 app.get('/api/auth/me', authenticateToken, getCurrentUser);
 
 // === USER LOCATION ROUTES (Protected) ===
@@ -225,13 +216,13 @@ if (process.argv[1] === new URL(import.meta.url).pathname) {
   connectDB()
     .then(() => {
       app.listen(PORT, () => {
-        console.log('✅ MongoDB connected');
-        console.log(`🚀 Server running on http://localhost:${PORT}`);
-        console.log(`📝 Environment: ${process.env.NODE_ENV || 'development'}`);
+        console.log('âœ… MongoDB connected');
+        console.log(`ðŸš€ Server running on http://localhost:${PORT}`);
+        console.log(`ðŸ“ Environment: ${process.env.NODE_ENV || 'development'}`);
       });
     })
     .catch((error) => {
-      console.error('❌ Failed to connect to MongoDB:', error.message);
+      console.error('âŒ Failed to connect to MongoDB:', error.message);
       console.error('Server cannot start without database connection');
       process.exit(1);
     });

@@ -196,7 +196,7 @@ export const syncOpenStreetMapHandler = async (req, res) => {
       out body;
     `;
 
-    console.log('🌍 Fetching from OpenStreetMap...');
+    console.log('ðŸŒ Fetching from OpenStreetMap...');
 
     const response = await axios.post(
       'https://overpass-api.de/api/interpreter',
@@ -208,7 +208,7 @@ export const syncOpenStreetMapHandler = async (req, res) => {
     );
 
     const elements = response.data.elements || [];
-    console.log(`🔍 Found ${elements.length} places from OSM`);
+    console.log(`ðŸ” Found ${elements.length} places from OSM`);
 
     let synced = 0;
     let duplicate = 0;
@@ -224,7 +224,7 @@ export const syncOpenStreetMapHandler = async (req, res) => {
         const osmCategory = element.tags.amenity || element.tags.tourism || element.tags.shop;
         const ourCategory = categoryMapping[osmCategory] || 'other';
 
-        // ✅ FIXED: Use aggregate with $geoNear instead of find with $near
+        // âœ… FIXED: Use aggregate with $geoNear instead of find with $near
         const existing = await Landmark.aggregate([
           {
             $geoNear: {
@@ -261,7 +261,7 @@ export const syncOpenStreetMapHandler = async (req, res) => {
       }
     }
 
-    console.log(`✅ Sync complete: ${synced} synced, ${duplicate} duplicates, ${failed} failed`);
+    console.log(`âœ… Sync complete: ${synced} synced, ${duplicate} duplicates, ${failed} failed`);
 
     res.json({
       success: true,

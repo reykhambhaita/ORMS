@@ -214,12 +214,12 @@ let cachedConnection = null;
 export const connectDB = async () => {
   try {
     if (cachedConnection && mongoose.connection.readyState === 1) {
-      console.log('✓ Using cached MongoDB connection');
+      console.log('âœ“ Using cached MongoDB connection');
       return cachedConnection;
     }
 
     if (mongoose.connection.readyState === 2) {
-      console.log('⏳ Waiting for existing connection...');
+      console.log('â³ Waiting for existing connection...');
       await new Promise((resolve, reject) => {
         const timeout = setTimeout(() => reject(new Error('Connection timeout')), 10000);
         mongoose.connection.once('connected', () => {
@@ -239,7 +239,7 @@ export const connectDB = async () => {
       throw new Error('MONGODB_URI environment variable is not set');
     }
 
-    console.log('🔌 Creating new MongoDB connection...');
+    console.log('ðŸ”Œ Creating new MongoDB connection...');
 
     await mongoose.connect(process.env.MONGODB_URI, {
       serverSelectionTimeoutMS: 5000,
@@ -249,12 +249,12 @@ export const connectDB = async () => {
       bufferCommands: false,
     });
 
-    console.log('✅ MongoDB connected successfully');
+    console.log('âœ… MongoDB connected successfully');
     cachedConnection = mongoose.connection;
 
     return cachedConnection;
   } catch (error) {
-    console.error('❌ MongoDB connection error:', error);
+    console.error('âŒ MongoDB connection error:', error);
     cachedConnection = null;
     throw error;
   }
