@@ -1,4 +1,6 @@
 // backend/index.js
+// CHANGES: Removed syncOpenStreetMapHandler route
+
 import cors from 'cors';
 import dotenv from 'dotenv';
 import express from 'express';
@@ -9,8 +11,7 @@ import { authenticateToken, optionalAuth, requireMechanic } from './authMiddlewa
 import {
   createLandmarkHandler,
   deleteLandmarkHandler,
-  getNearbyLandmarksHandler,
-  syncOpenStreetMapHandler
+  getNearbyLandmarksHandler
 } from './controllers/landmarkController.js';
 import {
   createMechanicProfileHandler,
@@ -126,10 +127,6 @@ app.get('/api/user/location-history', authenticateToken, async (req, res) => {
 });
 
 // === LANDMARK ROUTES ===
-// CRITICAL: This route MUST come BEFORE the /:id route to avoid conflicts
-
-// Sync OpenStreetMap (authenticated users) - SPECIFIC ROUTE FIRST
-app.post('/api/landmarks/sync-osm', authenticateToken, syncOpenStreetMapHandler);
 
 // Get nearby landmarks (public with optional auth)
 app.get('/api/landmarks/nearby', optionalAuth, getNearbyLandmarksHandler);
@@ -216,13 +213,13 @@ if (process.argv[1] === new URL(import.meta.url).pathname) {
   connectDB()
     .then(() => {
       app.listen(PORT, () => {
-        console.log('âœ… MongoDB connected');
-        console.log(`ðŸš€ Server running on http://localhost:${PORT}`);
-        console.log(`ðŸ“ Environment: ${process.env.NODE_ENV || 'development'}`);
+        console.log('✅ MongoDB connected');
+        console.log(`🚀 Server running on http://localhost:${PORT}`);
+        console.log(`📝 Environment: ${process.env.NODE_ENV || 'development'}`);
       });
     })
     .catch((error) => {
-      console.error('âŒ Failed to connect to MongoDB:', error.message);
+      console.error('❌ Failed to connect to MongoDB:', error.message);
       console.error('Server cannot start without database connection');
       process.exit(1);
     });
