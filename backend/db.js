@@ -293,17 +293,76 @@ export const getUserLocationHistory = async (userId, limit = 50) => {
 // Mechanic Functions
 export const getNearbyMechanics = async (lat, lng, radius = 5000) => {
   await connectDB();
-  return await Mechanic.find({
-    location: {
-      $near: {
-        $geometry: { type: 'Point', coordinates: [lng, lat] },
-        $maxDistance: radius
-      }
-    },
-    available: true
-  })
-  .populate('userId', 'username email')
-  .limit(20);
+
+  console.log('🔍 Searching mechanics:', { lat, lng, radius });
+
+  // First, check if any mechanics exist at all
+  const totalMechanics = await Mechanic.countDocuments({ available: true });
+  console.log('📊 Total available mechanics:', totalMechanics);
+
+  if (totalMechanics === 0) {
+    console.log('❌ No mechanics in database!');
+    return [];
+  }
+
+  // Try geospatial query
+  try {
+    const mechanics = await Mechanic.find({
+      location: {
+        $near: {
+          $geometry: { type: 'Point', coordinates: [lng, lat] },
+          $maxDistance: radius
+        }
+      },
+      available: true
+    })
+    .populate('userId', 'username email')
+    .limit(20);
+
+    console.log('✅ Found mechanics (geospatial):', mechanics.length);
+
+    if (mechanics.length > 0) {
+      return mechanics;
+    }
+  } catch (error) {
+    console.error('⚠️ Geospatial query failed:', error.message);
+  }
+
+  // FALLBACK: Manual distance calculation
+  console.log('⚠️ Falling back to manual distance calculation...');
+
+  const allMechanics = await Mechanic.find({ available: true })
+    .populate('userId', 'username email');
+
+  const mechanicsWithDistance = allMechanics.map(mechanic => {
+    const mechLat = mechanic.location.coordinates[1];
+    const mechLng = mechanic.location.coordinates[0];
+
+    // Haversine formula
+    const R = 6371000; // meters
+    const dLat = (mechLat - lat) * Math.PI / 180;
+    const dLng = (mechLng - lng) * Math.PI / 180;
+    const a =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos(lat * Math.PI / 180) * Math.cos(mechLat * Math.PI / 180) *
+      Math.sin(dLng / 2) * Math.sin(dLng / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    const distance = R * c;
+
+    console.log(`Distance to ${mechanic.name}: ${(distance/1000).toFixed(2)}km`);
+
+    return { mechanic, distance };
+  });
+
+  const nearby = mechanicsWithDistance
+    .filter(({ distance }) => distance <= radius)
+    .sort((a, b) => a.distance - b.distance)
+    .slice(0, 20)
+    .map(({ mechanic }) => mechanic);
+
+  console.log('✅ Found mechanics (fallback):', nearby.length);
+
+  return nearby;
 };
 
 export const createMechanicProfile = async (userId, mechanicData) => {
