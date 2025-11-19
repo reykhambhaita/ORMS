@@ -4,14 +4,12 @@ import { Accelerometer, Gyroscope, Magnetometer } from "expo-sensors";
 import * as SQLite from "expo-sqlite";
 import { useEffect, useRef, useState } from "react";
 import {
-  ActivityIndicator, // Add this
+  ActivityIndicator,
   Alert,
   Platform,
-  ScrollView,
   StyleSheet,
   Text,
-  TouchableOpacity,
-  View,
+  View
 } from "react-native";
 import { BleManager } from "react-native-ble-plx";
 import WifiManager from "react-native-wifi-reborn";
@@ -21,7 +19,7 @@ class KalmanFilter {
   constructor(
     processNoise = 0.001,
     measurementNoise = 0.01,
-    initialPosition = 0
+    initialPosition = null
   ) {
     this.processNoise = processNoise;
     this.measurementNoise = measurementNoise;
@@ -31,14 +29,16 @@ class KalmanFilter {
     this.velocity = 0;
     this.initialized = false;
   }
+
   update(measurement, dt = 1) {
-    if (!this.initialized && measurement !== 0) {
+    if (!this.initialized && measurement !== null && measurement !== 0) {
       this.position = measurement;
       this.initialized = true;
       this.positionError = this.measurementNoise;
       return this.position;
     }
     if (!this.initialized) return measurement;
+
     this.position += this.velocity * dt;
     this.positionError += this.velocityError * dt * dt + this.processNoise;
     const kalmanGain =
@@ -47,9 +47,11 @@ class KalmanFilter {
     this.positionError *= 1 - kalmanGain;
     return this.position;
   }
+
   setMeasurementNoise(noise) {
     this.measurementNoise = noise;
   }
+
   reset(position) {
     this.position = position;
     this.initialized = true;
@@ -57,22 +59,28 @@ class KalmanFilter {
   }
 }
 
-const RAJKOT_COORDS = { lat: 23.0225, lng: 70.77 };
-const STEP_THRESHOLD = 1.2;
-const STEP_DEBOUNCE_MS = 300;
-const STEP_LENGTH_DEGREES = 0.000007;
+// Physical constants
+const STEP_THRESHOLD = 1.15; // m/sÃ‚Â² threshold for step detection
+const STEP_DEBOUNCE_MS = 250; // Minimum time between steps
+const AVERAGE_STEP_LENGTH_M = 0.762; // Average human step length (meters)
+const METERS_TO_DEGREES_LAT = 1 / 111320; // Approximate meters to degrees latitude
 const SOURCE_TIMEOUT_MS = 10000;
 const SYNC_INTERVAL_MS = 10 * 60 * 1000; // 10 minutes
 
+// Kalman filter noise levels based on source accuracy
 const NOISE_MAP = {
   gps: 0.01,
-  beacon: 0.03,
   wifi: 0.05,
   bluetooth: 0.07,
   deadReckoning: 0.1,
 };
 
-const MultiModalLocationTracker = ({ onLocationUpdate }) => {
+// WiFi and BLE trilateration constants
+const WIFI_TX_POWER = -40; // Typical WiFi transmit power (dBm)
+const BLE_TX_POWER = -59; // Typical BLE transmit power (dBm)
+const PATH_LOSS_EXPONENT = 2.0; // Free space = 2.0, indoor = 2.5-4.0
+
+const MultiModalLocationTracker = ({ onLocationUpdate, onLandmarksUpdate, onMechanicUpdate }) => {
   const [currentLocation, setCurrentLocation] = useState({
     latitude: null,
     longitude: null,
@@ -87,16 +95,15 @@ const MultiModalLocationTracker = ({ onLocationUpdate }) => {
     wifi: null,
     bluetooth: null,
     deadReckoning: null,
-    beacon: null,
   });
   const [isTracking, setIsTracking] = useState(false);
   const [permissionGranted, setPermissionGranted] = useState(false);
   const [unsyncedCount, setUnsyncedCount] = useState(0);
-  const [connectionTest, setConnectionTest] = useState(null);
   const [user, setUser] = useState(null);
   const [initStatus, setInitStatus] = useState('Initializing...');
-  const kalmanLat = useRef(new KalmanFilter(0.001, 0.01, RAJKOT_COORDS.lat));
-  const kalmanLng = useRef(new KalmanFilter(0.001, 0.01, RAJKOT_COORDS.lng));
+
+  const kalmanLat = useRef(new KalmanFilter(0.001, 0.01, null));
+  const kalmanLng = useRef(new KalmanFilter(0.001, 0.01, null));
   const bleManager = useRef(null);
   const db = useRef(null);
   const syncTimer = useRef(null);
@@ -104,15 +111,20 @@ const MultiModalLocationTracker = ({ onLocationUpdate }) => {
 
   const sensorData = useRef({
     acceleration: { x: 0, y: 0, z: 0 },
+    accelerationHistory: [], // For better step detection
     gyroscope: { x: 0, y: 0, z: 0 },
     magnetometer: { x: 0, y: 0, z: 0 },
     stepCount: 0,
     heading: 0,
-    lastPosition: RAJKOT_COORDS,
+    lastPosition: null, // Only set after real GPS fix
     lastStepTime: Date.now(),
+    distanceTraveled: 0, // Track total distance
   });
 
+  // Store WiFi and BLE beacon data with timestamps
+  const wifiAccessPoints = useRef(new Map());
   const bluetoothBeacons = useRef(new Map());
+
   const subscriptions = useRef({
     location: null,
     accelerometer: null,
@@ -120,9 +132,10 @@ const MultiModalLocationTracker = ({ onLocationUpdate }) => {
     magnetometer: null,
     fusion: null,
     deadReckoning: null,
+    wifiScan: null,
   });
 
-  // ---------- Token Management with authService ----------
+  // ---------- Token Management ----------
   const getToken = async () => {
     try {
       return await authService.getToken();
@@ -132,7 +145,7 @@ const MultiModalLocationTracker = ({ onLocationUpdate }) => {
     }
   };
 
-  // ---------- sqlite promise wrappers ----------
+  // ---------- Database Functions ----------
   const openDatabase = () => {
     return SQLite.openDatabase("locationtracker.db");
   };
@@ -157,68 +170,246 @@ const MultiModalLocationTracker = ({ onLocationUpdate }) => {
     });
   };
 
-  const testBackendConnection = async () => {
-    try {
-      setConnectionTest('Testing...');
 
-      // Check if authenticated
-      const isAuth = await authService.isAuthenticated();
-      if (!isAuth) {
-        setConnectionTest('Error: Not authenticated');
-        return;
-      }
-
-      // Test authenticated request
-      const result = await authService.authenticatedRequest(
-        '/api/user/location',
-        {
-          method: 'POST',
-          body: JSON.stringify({
-            location: {
-              latitude: 23.0225,
-              longitude: 70.77,
-              accuracy: 10,
-              timestamp: Date.now()
-            },
-            landmarks: [],
-          }),
-        }
-      );
-
-      setConnectionTest(
-        result.success
-          ? 'Success - Connected & Authenticated!'
-          : `Error: ${result.error}`
-      );
-    } catch (error) {
-      setConnectionTest(`Error: ${error.message}`);
-    }
-  };
-
-
-
-
-  // ---------- DB helpers ----------
   const initializeDatabase = async () => {
     try {
       db.current = openDatabase();
       await execSqlAsync(`CREATE TABLE IF NOT EXISTS locations (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        latitude REAL NOT NULL,
-        longitude REAL NOT NULL,
-        accuracy REAL,
-        timestamp INTEGER NOT NULL,
-        synced INTEGER DEFAULT 0,
-        sources TEXT
-      );`);
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      latitude REAL NOT NULL,
+      longitude REAL NOT NULL,
+      accuracy REAL,
+      timestamp INTEGER NOT NULL,
+      synced INTEGER DEFAULT 0,
+      sources TEXT
+    );`);
       await execSqlAsync(
         "CREATE INDEX IF NOT EXISTS idx_synced ON locations(synced);"
       );
+
+      // NEW: Initialize landmarks and mechanics tables
+      await initializeLandmarksTable();
+      await initializeMechanicsTable();
+
       await updateUnsyncedCount();
     } catch (error) {
       console.error("Database initialization error:", error);
     }
   };
+
+
+  const initializeLandmarksTable = async () => {
+    try {
+      await execSqlAsync(`CREATE TABLE IF NOT EXISTS landmarks (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      description TEXT,
+      category TEXT,
+      latitude REAL NOT NULL,
+      longitude REAL NOT NULL,
+      timestamp INTEGER NOT NULL,
+      synced INTEGER DEFAULT 1
+    );`);
+      await execSqlAsync("CREATE INDEX IF NOT EXISTS idx_landmarks_location ON landmarks(latitude, longitude);");
+    } catch (error) {
+      console.error("Landmarks table initialization error:", error);
+    }
+  };
+
+  const initializeMechanicsTable = async () => {
+    try {
+      await execSqlAsync(`CREATE TABLE IF NOT EXISTS mechanics (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      phone TEXT,
+      latitude REAL NOT NULL,
+      longitude REAL NOT NULL,
+      specialties TEXT,
+      rating REAL,
+      available INTEGER,
+      timestamp INTEGER NOT NULL,
+      synced INTEGER DEFAULT 1
+    );`);
+      await execSqlAsync("CREATE INDEX IF NOT EXISTS idx_mechanics_location ON mechanics(latitude, longitude);");
+    } catch (error) {
+      console.error("Mechanics table initialization error:", error);
+    }
+  };
+
+  const cacheLandmarks = async (landmarks) => {
+    if (!db.current || !landmarks || landmarks.length === 0) return;
+    try {
+      const now = Date.now();
+      for (const landmark of landmarks) {
+        const id = landmark._id || landmark.id;
+        const lat = landmark.location?.latitude || landmark.latitude;
+        const lng = landmark.location?.longitude || landmark.longitude;
+
+        if (!id || !lat || !lng) continue;
+
+        // Upsert landmark
+        await execSqlAsync(
+          `INSERT OR REPLACE INTO landmarks
+        (id, name, description, category, latitude, longitude, timestamp, synced)
+        VALUES (?, ?, ?, ?, ?, ?, ?, 1);`,
+          [
+            id,
+            landmark.name,
+            landmark.description || '',
+            landmark.category || 'other',
+            lat,
+            lng,
+            now
+          ]
+        );
+      }
+    } catch (error) {
+      console.error("Error caching landmarks:", error);
+    }
+  };
+
+  // NEW: Get cached landmarks from SQLite
+  const getCachedLandmarks = async (latitude, longitude, radiusKm = 10) => {
+    if (!db.current) return [];
+    try {
+      // Simple distance-based query (approximation)
+      const latDelta = radiusKm / 111.32; // ~111.32 km per degree latitude
+      const lngDelta = radiusKm / (111.32 * Math.cos(latitude * Math.PI / 180));
+
+      const res = await execSqlAsync(
+        `SELECT * FROM landmarks
+       WHERE latitude BETWEEN ? AND ?
+       AND longitude BETWEEN ? AND ?
+       ORDER BY timestamp DESC;`,
+        [
+          latitude - latDelta,
+          latitude + latDelta,
+          longitude - lngDelta,
+          longitude + lngDelta
+        ]
+      );
+
+      return res?.rows?._array || [];
+    } catch (error) {
+      console.error("Error getting cached landmarks:", error);
+      return [];
+    }
+  };
+
+  // NEW: Cache mechanics to SQLite
+  const cacheMechanics = async (mechanics) => {
+    if (!db.current || !mechanics || mechanics.length === 0) return;
+    try {
+      const now = Date.now();
+      for (const mechanic of mechanics) {
+        const id = mechanic._id || mechanic.id;
+        const lat = mechanic.location?.latitude || mechanic.latitude;
+        const lng = mechanic.location?.longitude || mechanic.longitude;
+
+        if (!id || !lat || !lng) continue;
+
+        await execSqlAsync(
+          `INSERT OR REPLACE INTO mechanics
+        (id, name, phone, latitude, longitude, specialties, rating, available, timestamp, synced)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1);`,
+          [
+            id,
+            mechanic.name,
+            mechanic.phone || '',
+            lat,
+            lng,
+            JSON.stringify(mechanic.specialties || []),
+            mechanic.rating || 0,
+            mechanic.available ? 1 : 0,
+            now
+          ]
+        );
+      }
+    } catch (error) {
+      console.error("Error caching mechanics:", error);
+    }
+  };
+
+  // NEW: Get cached mechanics from SQLite
+  const getCachedMechanics = async (latitude, longitude, radiusKm = 10) => {
+    if (!db.current) return [];
+    try {
+      const latDelta = radiusKm / 111.32;
+      const lngDelta = radiusKm / (111.32 * Math.cos(latitude * Math.PI / 180));
+
+      const res = await execSqlAsync(
+        `SELECT * FROM mechanics
+       WHERE latitude BETWEEN ? AND ?
+       AND longitude BETWEEN ? AND ?
+       ORDER BY timestamp DESC;`,
+        [
+          latitude - latDelta,
+          latitude + latDelta,
+          longitude - lngDelta,
+          longitude + lngDelta
+        ]
+      );
+
+      const mechanics = res?.rows?._array || [];
+
+      // Parse specialties JSON
+      return mechanics.map(m => ({
+        ...m,
+        specialties: JSON.parse(m.specialties || '[]'),
+        available: m.available === 1
+      }));
+    } catch (error) {
+      console.error("Error getting cached mechanics:", error);
+      return [];
+    }
+  };
+
+  // NEW: Auto-sync function (every 5 minutes)
+  const autoSyncData = async () => {
+    if (!networkStatus.isConnected || !currentLocation?.latitude) return;
+
+    try {
+      console.log('🔄 Auto-syncing data...');
+
+      // Sync landmarks
+      const landmarkResult = await authService.getNearbyLandmarks(
+        currentLocation.latitude,
+        currentLocation.longitude,
+        10000 // 10km radius
+      );
+
+      if (landmarkResult.success && landmarkResult.data) {
+        await cacheLandmarks(landmarkResult.data);
+        if (onLandmarksUpdate) {
+          onLandmarksUpdate(landmarkResult.data);
+        }
+      }
+
+      // Sync mechanics
+      const mechanicResult = await authService.getNearbyMechanics(
+        currentLocation.latitude,
+        currentLocation.longitude,
+        10000
+      );
+
+      if (mechanicResult.success && mechanicResult.data) {
+        await cacheMechanics(mechanicResult.data);
+        if (onMechanicsUpdate) {
+          onMechanicsUpdate(mechanicResult.data);
+        }
+      }
+
+      // Sync location history
+      await syncWithBackend();
+
+      console.log('✅ Auto-sync completed');
+    } catch (error) {
+      console.error('Auto-sync error:', error);
+    }
+  };
+
+
+
 
   const saveLocationLocally = async (location) => {
     if (!db.current || !location) return;
@@ -274,7 +465,7 @@ const MultiModalLocationTracker = ({ onLocationUpdate }) => {
     await updateUnsyncedCount();
   };
 
-  // ---------- sync logic with authenticated requests ----------
+  // ---------- Sync Logic ----------
   const syncWithBackend = async () => {
     if (!db.current || !networkStatus.isConnected) return;
 
@@ -301,7 +492,6 @@ const MultiModalLocationTracker = ({ onLocationUpdate }) => {
             landmarks: [],
           };
 
-          // Use authService for authenticated request
           const result = await authService.authenticatedRequest(
             '/api/user/location',
             {
@@ -326,11 +516,17 @@ const MultiModalLocationTracker = ({ onLocationUpdate }) => {
 
   const startSyncTimer = () => {
     if (syncTimer.current) return;
-    syncTimer.current = setInterval(() => {
-      if (networkStatus.isConnected) syncWithBackend();
-    }, SYNC_INTERVAL_MS);
-  };
 
+    // Sync every 5 minutes (300000 ms)
+    syncTimer.current = setInterval(() => {
+      autoSyncData();
+    }, 300000); // 5 minutes
+
+    // Also do initial sync
+    setTimeout(() => {
+      autoSyncData();
+    }, 5000); // After 5 seconds
+  };
   const stopSyncTimer = () => {
     if (syncTimer.current) {
       clearInterval(syncTimer.current);
@@ -338,7 +534,7 @@ const MultiModalLocationTracker = ({ onLocationUpdate }) => {
     }
   };
 
-  // ---------- Load user on mount ----------
+  // ---------- Load User ----------
   useEffect(() => {
     const loadUser = async () => {
       const userData = await authService.getUser();
@@ -347,15 +543,14 @@ const MultiModalLocationTracker = ({ onLocationUpdate }) => {
     loadUser();
   }, []);
 
-  // ---------- lifecycle ----------
+  // ---------- Lifecycle ----------
   useEffect(() => {
     initializeDatabase();
     initializeLocationTracking();
     return cleanup;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ---------- location initialization & tracking ----------
+  // ---------- Location Initialization ----------
   const initializeLocationTracking = async () => {
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
@@ -364,24 +559,26 @@ const MultiModalLocationTracker = ({ onLocationUpdate }) => {
         return;
       }
       setPermissionGranted(true);
-      setInitStatus('Getting initial GPS fix...');
+      setInitStatus('Waiting for GPS fix...');
+
       try {
         const initialLocation = await Location.getCurrentPositionAsync({
-          accuracy: Location.Accuracy.Balanced,
+          accuracy: Location.Accuracy.BestForNavigation,
         });
+
         if (initialLocation?.coords) {
           const { latitude, longitude, accuracy } = initialLocation.coords;
           kalmanLat.current.reset(latitude);
           kalmanLng.current.reset(longitude);
           sensorData.current.lastPosition = { lat: latitude, lng: longitude };
+
           setCurrentLocation({
             latitude,
             longitude,
             accuracy: accuracy || 100,
           });
 
-          setInitStatus('Location ready.');
-
+          setInitStatus('GPS acquired. Tracking active.');
 
           if (onLocationUpdate) {
             onLocationUpdate({
@@ -390,14 +587,10 @@ const MultiModalLocationTracker = ({ onLocationUpdate }) => {
               accuracy: accuracy || 100,
             });
           }
-
-
-
-
         }
       } catch (e) {
-        console.log("No initial GPS:", e);
-        setInitStatus('No GPS fix yet, using defaults.');
+        console.log("Waiting for initial GPS fix:", e);
+        setInitStatus('Acquiring GPS signal...');
       }
 
       netInfoUnsubscribe.current = NetInfo.addEventListener((state) => {
@@ -422,9 +615,8 @@ const MultiModalLocationTracker = ({ onLocationUpdate }) => {
       setIsTracking(true);
       startGPSTracking();
       startDeadReckoning();
-      if (Platform.OS === "android") startWiFiFingerprinting();
+      if (Platform.OS === "android") startWiFiScanning();
       startBluetoothScanning();
-      startBeaconDetection();
       startLocationFusion();
       startSyncTimer();
     } catch (err) {
@@ -433,6 +625,7 @@ const MultiModalLocationTracker = ({ onLocationUpdate }) => {
     }
   };
 
+  // ---------- GPS Tracking ----------
   const startGPSTracking = async () => {
     try {
       subscriptions.current.location = await Location.watchPositionAsync(
@@ -451,6 +644,8 @@ const MultiModalLocationTracker = ({ onLocationUpdate }) => {
               source: "gps",
             };
             setLocationSources((prev) => ({ ...prev, gps: gpsData }));
+
+            // Update last known position for dead reckoning
             sensorData.current.lastPosition = {
               lat: location.coords.latitude,
               lng: location.coords.longitude,
@@ -459,7 +654,7 @@ const MultiModalLocationTracker = ({ onLocationUpdate }) => {
         }
       );
     } catch (e) {
-      console.warn("gps tracking failed, fallback", e);
+      console.warn("GPS tracking failed, trying fallback", e);
       try {
         subscriptions.current.location = await Location.watchPositionAsync(
           {
@@ -474,20 +669,26 @@ const MultiModalLocationTracker = ({ onLocationUpdate }) => {
                 gps: {
                   latitude: location.coords.latitude,
                   longitude: location.coords.longitude,
-                  accuracy: (location.coords.accuracy || 50) * 1.5,
+                  accuracy: location.coords.accuracy || 50,
                   timestamp: Date.now(),
                   source: "gps",
                 },
               }));
+
+              sensorData.current.lastPosition = {
+                lat: location.coords.latitude,
+                lng: location.coords.longitude,
+              };
             }
           }
         );
       } catch (err) {
-        console.error("gps fallback failed", err);
+        console.error("GPS fallback failed", err);
       }
     }
   };
 
+  // ---------- Dead Reckoning with Real Sensor Data ----------
   const startDeadReckoning = async () => {
     try {
       await Accelerometer.setUpdateInterval(100);
@@ -497,16 +698,34 @@ const MultiModalLocationTracker = ({ onLocationUpdate }) => {
       subscriptions.current.accelerometer = Accelerometer.addListener(
         ({ x, y, z }) => {
           sensorData.current.acceleration = { x, y, z };
+
+          // Calculate acceleration magnitude
           const magnitude = Math.sqrt(x * x + y * y + z * z);
-          const timeSinceLastStep =
-            Date.now() - sensorData.current.lastStepTime;
-          if (
-            magnitude > STEP_THRESHOLD &&
-            timeSinceLastStep > STEP_DEBOUNCE_MS
-          ) {
-            sensorData.current.stepCount++;
-            sensorData.current.lastStepTime = Date.now();
-            updatePositionFromStep();
+
+          // Add to history for better step detection
+          const history = sensorData.current.accelerationHistory;
+          history.push({ magnitude, timestamp: Date.now() });
+
+          // Keep only last 10 readings
+          if (history.length > 10) history.shift();
+
+          // Detect step: peak detection with debouncing
+          const timeSinceLastStep = Date.now() - sensorData.current.lastStepTime;
+
+          if (timeSinceLastStep > STEP_DEBOUNCE_MS) {
+            // Check if current magnitude is a local maximum
+            if (history.length >= 3) {
+              const prevMag = history[history.length - 2]?.magnitude || 0;
+              const nextMag = history[history.length - 1]?.magnitude || 0;
+
+              if (magnitude > STEP_THRESHOLD &&
+                magnitude > prevMag &&
+                magnitude > nextMag) {
+                sensorData.current.stepCount++;
+                sensorData.current.lastStepTime = Date.now();
+                updatePositionFromStep();
+              }
+            }
           }
         }
       );
@@ -518,8 +737,14 @@ const MultiModalLocationTracker = ({ onLocationUpdate }) => {
       subscriptions.current.magnetometer = Magnetometer.addListener(
         ({ x, y, z }) => {
           sensorData.current.magnetometer = { x, y, z };
+
+          // Calculate heading from magnetometer (0-360 degrees)
+          // Note: This is simplified; real implementation should account for
+          // device tilt using accelerometer data
           let heading = Math.atan2(y, x) * (180 / Math.PI);
-          sensorData.current.heading = heading < 0 ? heading + 360 : heading;
+          if (heading < 0) heading += 360;
+
+          sensorData.current.heading = heading;
         }
       );
 
@@ -528,138 +753,185 @@ const MultiModalLocationTracker = ({ onLocationUpdate }) => {
         2000
       );
     } catch (error) {
-      console.error("sensor init error:", error);
+      console.error("Sensor init error:", error);
     }
   };
 
   const updatePositionFromStep = () => {
     const { heading, lastPosition } = sensorData.current;
-    if (lastPosition?.lat !== 0) {
-      const headingRad = (heading * Math.PI) / 180;
-      const deltaLat = STEP_LENGTH_DEGREES * Math.cos(headingRad);
-      const deltaLng =
-        (STEP_LENGTH_DEGREES * Math.sin(headingRad)) /
-        Math.cos((lastPosition.lat * Math.PI) / 180);
-      setLocationSources((prev) => ({
-        ...prev,
-        deadReckoning: {
-          latitude: lastPosition.lat + deltaLat,
-          longitude: lastPosition.lng + deltaLng,
-          accuracy: 25,
-          timestamp: Date.now(),
-          source: "deadReckoning",
-        },
-      }));
-    }
+
+    // Only update if we have a valid last GPS position
+    if (!lastPosition || lastPosition.lat === null) return;
+
+    const headingRad = (heading * Math.PI) / 180;
+
+    // Convert step length from meters to degrees
+    const deltaLatMeters = AVERAGE_STEP_LENGTH_M * Math.cos(headingRad);
+    const deltaLat = deltaLatMeters * METERS_TO_DEGREES_LAT;
+
+    // Longitude degrees vary by latitude
+    const metersToDegreesLng = 1 / (111320 * Math.cos((lastPosition.lat * Math.PI) / 180));
+    const deltaLngMeters = AVERAGE_STEP_LENGTH_M * Math.sin(headingRad);
+    const deltaLng = deltaLngMeters * metersToDegreesLng;
+
+    sensorData.current.distanceTraveled += AVERAGE_STEP_LENGTH_M;
+
+    setLocationSources((prev) => ({
+      ...prev,
+      deadReckoning: {
+        latitude: lastPosition.lat + deltaLat,
+        longitude: lastPosition.lng + deltaLng,
+        accuracy: 25, // Dead reckoning accuracy degrades over time
+        timestamp: Date.now(),
+        source: "deadReckoning",
+      },
+    }));
   };
 
-  const startWiFiFingerprinting = async () => {
-    setInterval(async () => {
+  // ---------- WiFi Scanning (Real RSSI Data) ----------
+  const startWiFiScanning = async () => {
+    subscriptions.current.wifiScan = setInterval(async () => {
       try {
         const wifiList = await WifiManager.loadWifiList();
         if (!wifiList?.length) return;
-        const strongest = wifiList.reduce((p, c) =>
-          p.level > c.level ? p : c
-        );
-        if (strongest && sensorData.current.lastPosition) {
-          const signalRadius = Math.abs(strongest.level) / 100;
+
+        const now = Date.now();
+
+        // Store all detected access points with real RSSI values
+        wifiList.forEach(ap => {
+          if (ap.BSSID && ap.level) {
+            // Calculate distance from RSSI using path loss formula
+            // Distance (m) = 10 ^ ((TxPower - RSSI) / (10 * PathLossExponent))
+            const distance = Math.pow(
+              10,
+              (WIFI_TX_POWER - ap.level) / (10 * PATH_LOSS_EXPONENT)
+            );
+
+            wifiAccessPoints.current.set(ap.BSSID, {
+              bssid: ap.BSSID,
+              ssid: ap.SSID || 'Unknown',
+              rssi: ap.level,
+              distance: distance,
+              timestamp: now,
+            });
+          }
+        });
+
+        // Clean up old entries (>30s)
+        for (const [bssid, data] of wifiAccessPoints.current.entries()) {
+          if (now - data.timestamp > 30000) {
+            wifiAccessPoints.current.delete(bssid);
+          }
+        }
+
+        // Update WiFi source with strongest signal (for display purposes)
+        // Note: True positioning would require trilateration with known AP locations
+        if (wifiAccessPoints.current.size > 0) {
+          const aps = Array.from(wifiAccessPoints.current.values());
+          const strongest = aps.reduce((prev, curr) =>
+            curr.rssi > prev.rssi ? curr : prev
+          );
+
           setLocationSources((prev) => ({
             ...prev,
             wifi: {
-              latitude:
-                sensorData.current.lastPosition.lat +
-                (Math.random() - 0.5) * signalRadius * 0.001,
-              longitude:
-                sensorData.current.lastPosition.lng +
-                (Math.random() - 0.5) * signalRadius * 0.001,
-              accuracy: 50,
-              timestamp: Date.now(),
+              latitude: null, // No position without AP database
+              longitude: null,
+              accuracy: strongest.distance,
+              rssi: strongest.rssi,
+              ssid: strongest.ssid,
+              timestamp: now,
               source: "wifi",
+              apCount: wifiAccessPoints.current.size,
             },
           }));
         }
       } catch (e) {
-        console.error("wifi fingerprint error:", e);
+        console.error("WiFi scan error:", e);
       }
     }, 5000);
   };
 
+
+
+
+  // ---------- Bluetooth Scanning (Real Beacon Data) ----------
   const startBluetoothScanning = () => {
     if (!bleManager.current) return;
+
     try {
       bleManager.current.startDeviceScan(null, null, (error, device) => {
         if (error || !device?.rssi) return;
-        const txPower = -59;
-        const distance = Math.pow(10, (txPower - device.rssi) / 20);
+
+        // Calculate distance from RSSI
+        const distance = Math.pow(
+          10,
+          (BLE_TX_POWER - device.rssi) / (10 * PATH_LOSS_EXPONENT)
+        );
+
         bluetoothBeacons.current.set(device.id, {
           id: device.id,
-          name: device.name,
+          name: device.name || 'Unknown',
           rssi: device.rssi,
-          distance,
+          distance: distance,
           timestamp: Date.now(),
         });
-        if (
-          bluetoothBeacons.current.size >= 2 &&
-          sensorData.current.lastPosition
-        ) {
+
+        // Clean up old beacons (>30s)
+        const now = Date.now();
+        for (const [id, data] of bluetoothBeacons.current.entries()) {
+          if (now - data.timestamp > 30000) {
+            bluetoothBeacons.current.delete(id);
+          }
+        }
+
+        // Update Bluetooth source with beacon data
+        // Note: True positioning requires trilateration with known beacon locations
+        if (bluetoothBeacons.current.size > 0) {
+          const beacons = Array.from(bluetoothBeacons.current.values());
+          const closest = beacons.reduce((prev, curr) =>
+            curr.distance < prev.distance ? curr : prev
+          );
+
           setLocationSources((prev) => ({
             ...prev,
             bluetooth: {
-              latitude:
-                sensorData.current.lastPosition.lat +
-                (Math.random() - 0.5) * 0.0001,
-              longitude:
-                sensorData.current.lastPosition.lng +
-                (Math.random() - 0.5) * 0.0001,
-              accuracy: 30,
-              timestamp: Date.now(),
+              latitude: null, // No position without beacon database
+              longitude: null,
+              accuracy: closest.distance,
+              rssi: closest.rssi,
+              deviceName: closest.name,
+              timestamp: now,
               source: "bluetooth",
+              beaconCount: bluetoothBeacons.current.size,
             },
           }));
         }
       });
     } catch (err) {
-      console.error("ble scan error:", err);
+      console.error("BLE scan error:", err);
     }
   };
 
-  const startBeaconDetection = () => {
-    setInterval(() => {
-      if (Math.random() > 0.7 && sensorData.current.lastPosition) {
-        setLocationSources((prev) => ({
-          ...prev,
-          beacon: {
-            latitude:
-              sensorData.current.lastPosition.lat +
-              (Math.random() - 0.5) * 0.0002,
-            longitude:
-              sensorData.current.lastPosition.lng +
-              (Math.random() - 0.5) * 0.0002,
-            accuracy: 15,
-            timestamp: Date.now(),
-            source: "beacon",
-          },
-        }));
-      }
-    }, 3000);
-  };
-
+  // ---------- Location Fusion (Real Data Only) ----------
   const startLocationFusion = () => {
     subscriptions.current.fusion = setInterval(fuseLocationData, 1000);
   };
 
-
   const fuseLocationData = () => {
+    // Only use sources with valid latitude/longitude coordinates
     const sources = Object.values(locationSources).filter(
       (source) =>
         source?.timestamp > Date.now() - SOURCE_TIMEOUT_MS &&
-        source.latitude &&
-        source.longitude &&
+        source.latitude !== null &&
+        source.longitude !== null &&
         !isNaN(source.latitude) &&
         !isNaN(source.longitude)
     );
+
     if (sources.length === 0) return;
 
+    // Sort by accuracy and recency
     sources.sort((a, b) => {
       const accuracyDiff = (a.accuracy || 100) - (b.accuracy || 100);
       const timeDiff = (b.timestamp - a.timestamp) / 1000;
@@ -674,6 +946,7 @@ const MultiModalLocationTracker = ({ onLocationUpdate }) => {
     let filteredLat = kalmanLat.current.update(primarySource.latitude);
     let filteredLng = kalmanLng.current.update(primarySource.longitude);
 
+    // Weighted fusion if multiple sources available
     if (sources.length > 1) {
       let totalWeight = 1 / (primarySource.accuracy || 10);
       let weightedLat = filteredLat * totalWeight;
@@ -703,12 +976,12 @@ const MultiModalLocationTracker = ({ onLocationUpdate }) => {
     sensorData.current.lastPosition = { lat: filteredLat, lng: filteredLng };
     saveLocationLocally(fusedLocation);
 
-    // NEW: Pass location to parent component
     if (onLocationUpdate) {
       onLocationUpdate(fusedLocation);
     }
   };
 
+  // ---------- Cleanup ----------
   const cleanup = () => {
     subscriptions.current.location?.remove?.();
     subscriptions.current.accelerometer?.remove?.();
@@ -719,6 +992,8 @@ const MultiModalLocationTracker = ({ onLocationUpdate }) => {
       clearInterval(subscriptions.current.fusion);
     if (subscriptions.current.deadReckoning)
       clearInterval(subscriptions.current.deadReckoning);
+    if (subscriptions.current.wifiScan)
+      clearInterval(subscriptions.current.wifiScan);
     stopSyncTimer();
     try {
       bleManager.current?.stopDeviceScan();
@@ -727,222 +1002,120 @@ const MultiModalLocationTracker = ({ onLocationUpdate }) => {
     }
   };
 
+  // ---------- UI Helper Functions ----------
   const getActiveSourcesCount = () =>
     Object.values(locationSources).filter(
       (s) => s?.timestamp > Date.now() - SOURCE_TIMEOUT_MS
     ).length;
 
   const getSourceStatus = (source) =>
-    source?.timestamp > Date.now() - SOURCE_TIMEOUT_MS ? "✓" : "✗";
+    source?.timestamp > Date.now() - SOURCE_TIMEOUT_MS ? "Ã¢Å“â€œ" : "Ã¢Å“â€”";
 
-  return (
-    <ScrollView
-      style={styles.container}
-      contentContainerStyle={styles.contentContainer}
-    >
-
-
-      {(!currentLocation?.latitude || !currentLocation?.longitude) && (
-        <View style={[styles.card, styles.statusCard]}>
-          <Text style={styles.statusTitle}>📍 {initStatus}</Text>
-          <ActivityIndicator size="small" color="#007AFF" />
-        </View>
-      )}
-      <Text style={styles.title}>Multi-Modal Location Tracker</Text>
-
-      {/* User Info Card */}
-      {user && (
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>👤 User</Text>
-          <Text style={styles.statusText}>
-            Username: {user.username}
-          </Text>
-          <Text style={styles.statusText}>
-            Email: {user.email}
-          </Text>
-        </View>
-      )}
-
-      <View style={styles.card}>
-        <Text style={styles.cardTitle}>📍 Current Location</Text>
-        <Text style={styles.coordinates}>
-          Lat: {currentLocation.latitude?.toFixed(6) ?? "Waiting..."}
-        </Text>
-        <Text style={styles.coordinates}>
-          Lng: {currentLocation.longitude?.toFixed(6) ?? "Waiting..."}
-        </Text>
-        <Text style={styles.accuracy}>
-          🎯 Accuracy:{" "}
-          {currentLocation.accuracy
-            ? `±${currentLocation.accuracy.toFixed(1)}m`
-            : "No fix"}
-        </Text>
+  // ---------- Render ----------
+  // Replace the entire return statement (around line 250+) with this:
+return (
+  <View style={styles.container}>
+    {(!currentLocation?.latitude || !currentLocation?.longitude) && (
+      <View style={[styles.card, styles.statusCard]}>
+        <Text style={styles.statusTitle}>📍 {initStatus}</Text>
+        <ActivityIndicator size="small" color="#007AFF" />
       </View>
+    )}
 
-      <View style={styles.card}>
-        <Text style={styles.cardTitle}>📶 Tracking Status</Text>
-        <Text style={styles.statusText}>
-          📡 Network: {networkStatus.isConnected ? "🟢 Online" : "🔴 Offline"}{" "}
-          ({networkStatus.type})
-        </Text>
-        <Text style={styles.statusText}>
-          🔌 Active Sources: {getActiveSourcesCount()}/5
-        </Text>
-        <Text style={styles.statusText}>
-          📍 Permission: {permissionGranted ? "🟢 Granted" : "🔴 Denied"}
-        </Text>
-        <Text style={styles.statusText}>
-          💾 Unsynced: {unsyncedCount} records
-        </Text>
-      </View>
+    <Text style={styles.title}>📍 Current Location</Text>
 
-      <View style={styles.card}>
-        <Text style={styles.cardTitle}>🧭 Location Sources</Text>
-        <Text style={styles.sourceItem}>
-          {getSourceStatus(locationSources.gps)} GPS/AGPS{" "}
-          {locationSources.gps &&
-            ` (±${locationSources.gps.accuracy?.toFixed(0)}m)`}
-        </Text>
-        <Text style={styles.sourceItem}>
-          {getSourceStatus(locationSources.wifi)} WiFi Fingerprint{" "}
-          {locationSources.wifi &&
-            ` (±${locationSources.wifi.accuracy?.toFixed(0)}m)`}
-        </Text>
-        <Text style={styles.sourceItem}>
-          {getSourceStatus(locationSources.bluetooth)} Bluetooth Mesh{" "}
-          {locationSources.bluetooth &&
-            ` (±${locationSources.bluetooth.accuracy?.toFixed(0)}m)`}
-        </Text>
-        <Text style={styles.sourceItem}>
-          {getSourceStatus(locationSources.deadReckoning)} Dead Reckoning{" "}
-          {locationSources.deadReckoning &&
-            ` (±${locationSources.deadReckoning.accuracy?.toFixed(0)}m)`}
-        </Text>
-        <Text style={styles.sourceItem}>
-          {getSourceStatus(locationSources.beacon)} Beacon Detection{" "}
-          {locationSources.beacon &&
-            ` (±${locationSources.beacon.accuracy?.toFixed(0)}m)`}
-        </Text>
+    {user && (
+      <View style={styles.userCard}>
+        <Text style={styles.userName}>👤 {user.username}</Text>
+        <Text style={styles.userRole}>Role: {user.role}</Text>
       </View>
+    )}
 
-      <View style={styles.card}>
-        <Text style={styles.cardTitle}>📊 Sensor Data</Text>
-        <Text style={styles.sensorText}>
-          👣 Steps: {sensorData.current.stepCount}
-        </Text>
-        <Text style={styles.sensorText}>
-          🧭 Heading: {sensorData.current.heading.toFixed(1)}°
-        </Text>
-        <Text style={styles.sensorText}>
-          📈 Accel: X:{sensorData.current.acceleration.x.toFixed(2)} Y:
-          {sensorData.current.acceleration.y.toFixed(2)} Z:
-          {sensorData.current.acceleration.z.toFixed(2)}
-        </Text>
-      </View>
-
-      <View style={styles.card}>
-        <Text style={styles.cardTitle}>🧪 Debug Info</Text>
-        <Text style={styles.debugText}>
-          ⚡ Tracking: {isTracking ? "✓ Active" : "✗ Inactive"}
-        </Text>
-        <Text style={styles.debugText}>
-          ⏰ Last Update: {new Date().toLocaleTimeString()}
-        </Text>
-      </View>
-
-      <View style={styles.card}>
-        <Text style={styles.cardTitle}>🔗 Backend Connection Test</Text>
-        <TouchableOpacity
-          style={styles.testButton}
-          onPress={testBackendConnection}
-        >
-          <Text style={styles.testButtonText}>
-            🚀 Test Authenticated Connection
-          </Text>
-        </TouchableOpacity>
-        {connectionTest && (
-          <Text style={styles.debugText}>{connectionTest}</Text>
-        )}
-      </View>
-    </ScrollView>
-  );
+    <View style={styles.card}>
+      <Text style={styles.locationText}>
+        📍 {currentLocation.address || 'Acquiring location...'}
+      </Text>
+      <Text style={styles.coordsText}>
+        Lat: {currentLocation.latitude?.toFixed(6) || 'N/A'}, Lng: {currentLocation.longitude?.toFixed(6) || 'N/A'}
+      </Text>
+      <Text style={styles.accuracyText}>
+        🎯 Accuracy: {currentLocation.accuracy ? `±${currentLocation.accuracy.toFixed(0)}m` : 'No fix'}
+      </Text>
+      <Text style={styles.networkText}>
+        {networkStatus.isConnected ? '🟢 Online' : '🔴 Offline'} ({networkStatus.type})
+      </Text>
+    </View>
+  </View>
+);
 };
 
 const styles = StyleSheet.create({
   container: {
-    flex: 1,
-    backgroundColor: "#f5f5f5",
-  },
-  contentContainer: {
-    padding: 20,
-    paddingBottom: 40,
-  },
-  title: {
-    fontSize: 24,
-    fontWeight: "bold",
-    textAlign: "center",
-    marginBottom: 20,
-    color: "#333",
-  },
-  card: {
-    backgroundColor: "#fff",
+    backgroundColor: '#fff',
     padding: 15,
     borderRadius: 10,
     marginBottom: 15,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
   },
-  cardTitle: {
+  card: {
+    backgroundColor: '#f9f9f9',
+    padding: 15,
+    borderRadius: 10,
+    marginBottom: 10,
+  },
+  statusCard: {
+    backgroundColor: '#FFF9E6',
+    borderColor: '#FFD700',
+    borderWidth: 1,
+    alignItems: 'center',
+  },
+  statusTitle: {
     fontSize: 16,
     fontWeight: "600",
     marginBottom: 10,
     color: "#333",
   },
-  coordinates: {
-    fontSize: 16,
-    fontFamily: Platform.OS === "ios" ? "Courier" : "monospace",
-    color: "#666",
-    marginBottom: 5,
+  title: {
+    fontSize: 18,
+    fontWeight: '600',
+    marginBottom: 15,
+    color: '#333',
   },
-  accuracy: {
-    fontSize: 14,
-    color: "#888",
-    fontStyle: "italic"
-  },
-  statusText: {
-    fontSize: 14,
-    marginBottom: 5,
-    color: "#666"
-  },
-  sourceItem: {
-    fontSize: 14,
-    marginBottom: 5,
-    color: "#666"
-  },
-  sensorText: {
-    fontSize: 14,
-    marginBottom: 5,
-    color: "#666"
-  },
-  debugText: {
-    fontSize: 12,
-    marginBottom: 3,
-    color: "#999"
-  },
-  testButton: {
-    backgroundColor: "#007AFF",
+  userCard: {
+    backgroundColor: '#E3F2FD',
     padding: 12,
     borderRadius: 8,
-    alignItems: "center",
     marginBottom: 10,
   },
-  testButtonText: {
-    color: "white",
-    fontWeight: "600",
+  userName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#007AFF',
+    marginBottom: 4,
+  },
+  userRole: {
+    fontSize: 14,
+    color: '#666',
+  },
+  locationText: {
+    fontSize: 16,
+    color: '#333',
+    marginBottom: 6,
+    fontWeight: '500',
+  },
+  coordsText: {
+    fontSize: 14,
+    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
+    color: '#666',
+    marginBottom: 6,
+  },
+  accuracyText: {
+    fontSize: 14,
+    color: '#666',
+    marginBottom: 4,
+  },
+  networkText: {
+    fontSize: 14,
+    color: '#666',
   },
 });
-
 export default MultiModalLocationTracker;

@@ -1,4 +1,6 @@
 // src/components/landmarks/LandmarkManager.jsx
+import NetInfo from "@react-native-community/netinfo";
+import * as SQLite from 'expo-sqlite';
 import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -23,20 +25,29 @@ const CATEGORIES = [
   { value: 'other', label: '📍 Other', emoji: '📍' },
 ];
 
-const LandmarkManager = ({ currentLocation, onLandmarkAdded }) => {
+const LandmarkManager = ({ currentLocation, onLandmarksUpdate }) => {
   const [modalVisible, setModalVisible] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [syncingOSM, setSyncingOSM] = useState(false);
   const [currentUserId, setCurrentUserId] = useState(null);
+  const [isOnline, setIsOnline] = useState(true);
 
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [category, setCategory] = useState('other');
   const [nearbyLandmarks, setNearbyLandmarks] = useState([]);
-  const [showNearby, setShowNearby] = useState(false);
-  const [dataSource, setDataSource] = useState(null);
 
-  // Get current user ID on mount
+  const db = SQLite.openDatabaseSync('locationtracker.db');
+
+  // Monitor network status
+  useEffect(() => {
+    const unsubscribe = NetInfo.addEventListener((state) => {
+      setIsOnline(!!state.isConnected);
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  // Get current user ID
   useEffect(() => {
     const loadUser = async () => {
       const user = await authService.getUser();
@@ -47,6 +58,113 @@ const LandmarkManager = ({ currentLocation, onLandmarkAdded }) => {
     loadUser();
   }, []);
 
+  // Auto-load landmarks
+  useEffect(() => {
+    if (currentLocation?.latitude && currentLocation?.longitude) {
+      loadLandmarks();
+    }
+  }, [currentLocation?.latitude, currentLocation?.longitude]);
+
+  const loadLandmarks = async () => {
+    if (!currentLocation?.latitude || !currentLocation?.longitude) return;
+
+    setLoading(true);
+
+    try {
+      // First, load from cache
+      const cached = await getCachedLandmarks(
+        currentLocation.latitude,
+        currentLocation.longitude
+      );
+
+      if (cached.length > 0) {
+        setNearbyLandmarks(cached);
+        if (onLandmarksUpdate) {
+          onLandmarksUpdate(cached);
+        }
+      }
+
+      // Then try to fetch from backend if online
+      if (isOnline) {
+        const result = await authService.getNearbyLandmarks(
+          currentLocation.latitude,
+          currentLocation.longitude,
+          10000
+        );
+
+        if (result.success && result.data) {
+          await cacheLandmarks(result.data);
+          setNearbyLandmarks(result.data);
+          if (onLandmarksUpdate) {
+            onLandmarksUpdate(result.data);
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Load landmarks error:', error);
+      // Use cached data on error
+      const cached = await getCachedLandmarks(
+        currentLocation.latitude,
+        currentLocation.longitude
+      );
+      setNearbyLandmarks(cached);
+      if (onLandmarksUpdate) {
+        onLandmarksUpdate(cached);
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const getCachedLandmarks = async (latitude, longitude) => {
+    try {
+      const latDelta = 10 / 111.32;
+      const lngDelta = 10 / (111.32 * Math.cos(latitude * Math.PI / 180));
+
+      const result = await db.getAllAsync(
+        `SELECT * FROM landmarks
+         WHERE latitude BETWEEN ? AND ?
+         AND longitude BETWEEN ? AND ?
+         ORDER BY timestamp DESC;`,
+        [
+          latitude - latDelta,
+          latitude + latDelta,
+          longitude - lngDelta,
+          longitude + lngDelta
+        ]
+      );
+
+      return result || [];
+    } catch (error) {
+      console.error('Get cached landmarks error:', error);
+      return [];
+    }
+  };
+
+  const cacheLandmarks = async (landmarks) => {
+    if (!landmarks || landmarks.length === 0) return;
+
+    try {
+      const now = Date.now();
+      for (const landmark of landmarks) {
+        const id = landmark._id || landmark.id;
+        const lat = landmark.location?.latitude || landmark.latitude;
+        const lng = landmark.location?.longitude || landmark.longitude;
+
+        if (!id || !lat || !lng) continue;
+
+        await db.runAsync(
+          `INSERT OR REPLACE INTO landmarks
+          (id, name, description, category, latitude, longitude, timestamp, synced)
+          VALUES (?, ?, ?, ?, ?, ?, ?, 1);`,
+          [id, landmark.name, landmark.description || '', landmark.category || 'other', lat, lng, now]
+        );
+      }
+    } catch (error) {
+      console.error('Cache landmarks error:', error);
+    }
+  };
+
   const handleAddLandmark = async () => {
     if (!name.trim()) {
       Alert.alert('Error', 'Please enter a landmark name');
@@ -54,173 +172,106 @@ const LandmarkManager = ({ currentLocation, onLandmarkAdded }) => {
     }
 
     if (!currentLocation?.latitude || !currentLocation?.longitude) {
-      Alert.alert(
-        'Location Not Ready',
-        'GPS is still initializing. Please wait a few seconds and try again.'
-      );
+      Alert.alert('Error', 'GPS location not available');
       return;
     }
 
-    setLoading(true);
+    const landmarkData = {
+      id: `offline_${Date.now()}`,
+      name: name.trim(),
+      description: description.trim(),
+      category,
+      latitude: currentLocation.latitude,
+      longitude: currentLocation.longitude,
+      timestamp: Date.now(),
+      synced: 0
+    };
 
     try {
-      const result = await authService.createLandmark(
-        name.trim(),
-        description.trim(),
-        category,
-        currentLocation.latitude,
-        currentLocation.longitude
+      // Save to local database first (offline-first approach)
+      await db.runAsync(
+        `INSERT INTO landmarks (id, name, description, category, latitude, longitude, timestamp, synced)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?);`,
+        [
+          landmarkData.id,
+          landmarkData.name,
+          landmarkData.description,
+          landmarkData.category,
+          landmarkData.latitude,
+          landmarkData.longitude,
+          landmarkData.timestamp,
+          0
+        ]
       );
 
-      setLoading(false);
-
-      if (result.success) {
-        Alert.alert('Success', 'Landmark added successfully!');
-        setName('');
-        setDescription('');
-        setCategory('other');
-        setModalVisible(false);
-
-        if (onLandmarkAdded) {
-          onLandmarkAdded(result.data);
-        }
-
-        // Refresh the list
-        handleFetchNearby();
-      } else {
-        Alert.alert('Error', result.error || 'Failed to add landmark');
-      }
-    } catch (error) {
-      setLoading(false);
-      Alert.alert('Error', error.message);
-    }
-  };
-
-  const handleFetchNearby = async () => {
-    if (!currentLocation?.latitude || !currentLocation?.longitude) {
-      Alert.alert(
-        'Location Not Ready',
-        'GPS is still initializing. Please wait for a location fix.'
-      );
-      return;
-    }
-
-    setLoading(true);
-
-    try {
-      const result = await authService.getNearbyLandmarks(
-        currentLocation.latitude,
-        currentLocation.longitude,
-        5000
-      );
-
-      setLoading(false);
-
-      if (result.success) {
-        setNearbyLandmarks(result.data || []);
-        setDataSource(result.source || 'database');
-        setShowNearby(true);
-
-        // Show helpful message if no landmarks found
-        if (result.data?.length === 0) {
-          Alert.alert(
-            'No Landmarks Found',
-            'No landmarks found in the database. Try:\n\n' +
-            '1. Sync OpenStreetMap to import nearby places\n' +
-            '2. Add landmarks manually\n' +
-            '3. Check your network connection'
+      // Try to sync with backend if online
+      if (isOnline) {
+        try {
+          const result = await authService.createLandmark(
+            landmarkData.name,
+            landmarkData.description,
+            landmarkData.category,
+            landmarkData.latitude,
+            landmarkData.longitude
           );
+
+          if (result.success) {
+            // Update with server ID
+            await db.runAsync(
+              'UPDATE landmarks SET id = ?, synced = 1 WHERE id = ?;',
+              [result.data.id, landmarkData.id]
+            );
+            Alert.alert('Success', 'Landmark added and synced!');
+          }
+        } catch (syncError) {
+          console.log('Sync failed, saved offline:', syncError);
+          Alert.alert('Saved Offline', 'Landmark saved locally. Will sync when online.');
         }
       } else {
-        Alert.alert('Error', result.error || 'Failed to fetch landmarks');
+        Alert.alert('Saved Offline', 'Landmark saved locally. Will sync when online.');
       }
+
+      setName('');
+      setDescription('');
+      setCategory('other');
+      setModalVisible(false);
+      loadLandmarks();
     } catch (error) {
-      setLoading(false);
-      Alert.alert('Error', error.message);
+      console.error('Add landmark error:', error);
+      Alert.alert('Error', 'Failed to save landmark');
     }
   };
 
   const handleDeleteLandmark = async (landmarkId, landmarkName) => {
     Alert.alert(
       'Delete Landmark',
-      `Are you sure you want to delete "${landmarkName}"?`,
+      `Delete "${landmarkName}"?`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
           text: 'Delete',
           style: 'destructive',
           onPress: async () => {
-            setLoading(true);
             try {
-              const result = await authService.deleteLandmark(landmarkId);
-              setLoading(false);
+              // Delete from local database
+              await db.runAsync('DELETE FROM landmarks WHERE id = ?;', [landmarkId]);
 
-              if (result.success) {
-                Alert.alert('Success', 'Landmark deleted successfully!');
-                // Remove from list
-                setNearbyLandmarks(prev => prev.filter(l => (l._id || l.id) !== landmarkId));
-              } else {
-                Alert.alert('Error', result.error || 'Failed to delete landmark');
+              // Try to delete from backend if online
+              if (isOnline && !landmarkId.startsWith('offline_')) {
+                try {
+                  await authService.deleteLandmark(landmarkId);
+                } catch (syncError) {
+                  console.log('Backend delete failed:', syncError);
+                }
               }
+
+              Alert.alert('Success', 'Landmark deleted');
+              loadLandmarks();
             } catch (error) {
-              setLoading(false);
-              Alert.alert('Error', error.message);
+              Alert.alert('Error', 'Failed to delete landmark');
             }
           }
         }
-      ]
-    );
-  };
-
-  const handleSyncOpenStreetMap = async () => {
-    if (!currentLocation?.latitude || !currentLocation?.longitude) {
-      Alert.alert('Error', 'Location not available. Please wait for GPS fix.');
-      return;
-    }
-
-    Alert.alert(
-      'Sync OpenStreetMap',
-      'This will fetch nearby places from OpenStreetMap and save them to your database. This may take a few moments.\n\nContinue?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Sync',
-          onPress: async () => {
-            setSyncingOSM(true);
-
-            try {
-              const result = await authService.syncOpenStreetMapToBackend(
-                currentLocation.latitude,
-                currentLocation.longitude,
-                5000
-              );
-
-              setSyncingOSM(false);
-
-              if (result.success) {
-                const message = result.synced > 0
-                  ? `Successfully synced ${result.synced} new places!\n\n` +
-                    `Duplicates skipped: ${result.duplicate || 0}\n` +
-                    `Failed: ${result.failed || 0}\n` +
-                    `Total found: ${result.total || 0}`
-                  : `No new places to sync.\n\n` +
-                    `Duplicates skipped: ${result.duplicate || 0}\n` +
-                    `Total found: ${result.total || 0}`;
-
-                Alert.alert(
-                  'Sync Complete! 🎉',
-                  message,
-                  [{ text: 'OK', onPress: () => handleFetchNearby() }]
-                );
-              } else {
-                Alert.alert('Sync Failed', result.error || 'Failed to sync places from OpenStreetMap');
-              }
-            } catch (error) {
-              setSyncingOSM(false);
-              Alert.alert('Error', error.message || 'Failed to sync OpenStreetMap data');
-            }
-          },
-        },
       ]
     );
   };
@@ -230,80 +281,40 @@ const LandmarkManager = ({ currentLocation, onLandmarkAdded }) => {
     return found ? found.emoji : '📍';
   };
 
-  const getDataSourceLabel = () => {
-    switch (dataSource) {
-      case 'database':
-        return '☁️ Database';
-      case 'osm':
-        return '🗺️ OpenStreetMap';
-      default:
-        return '☁️ Live Data';
-    }
-  };
-
   const hasLocation = currentLocation?.latitude && currentLocation?.longitude;
 
   return (
     <>
       <View style={styles.container}>
-        <Text style={styles.title}>🗺️ Landmarks</Text>
+        <View style={styles.header}>
+          <Text style={styles.title}>🗺️ Landmarks</Text>
+          {!isOnline && <Text style={styles.offlineBadge}>🔴 Offline Mode</Text>}
+        </View>
 
         {!hasLocation && (
           <View style={styles.warningBanner}>
-            <Text style={styles.warningText}>⏳ Waiting for GPS location...</Text>
+            <Text style={styles.warningText}>⏳ Waiting for GPS...</Text>
           </View>
         )}
 
-        <View style={styles.buttonRow}>
-          <TouchableOpacity
-            style={[styles.button, styles.primaryButton, !hasLocation && styles.buttonDisabled]}
-            onPress={() => setModalVisible(true)}
-            disabled={!hasLocation}
-          >
-            <Text style={styles.buttonText}>➕ Add Landmark</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.button, styles.secondaryButton, !hasLocation && styles.buttonDisabled]}
-            onPress={handleFetchNearby}
-            disabled={loading || !hasLocation}
-          >
-            {loading && !syncingOSM ? (
-              <ActivityIndicator color="#007AFF" size="small" />
-            ) : (
-              <Text style={styles.buttonTextSecondary}>🔍 View Nearby</Text>
-            )}
-          </TouchableOpacity>
-        </View>
-
         <TouchableOpacity
-          style={[styles.button, styles.osmButton, !hasLocation && styles.buttonDisabled]}
-          onPress={handleSyncOpenStreetMap}
-          disabled={syncingOSM || !hasLocation}
+          style={[styles.button, !hasLocation && styles.buttonDisabled]}
+          onPress={() => setModalVisible(true)}
+          disabled={!hasLocation}
         >
-          {syncingOSM ? (
-            <View style={styles.syncingContainer}>
-              <ActivityIndicator color="#fff" size="small" />
-              <Text style={[styles.buttonText, styles.syncingText]}>Syncing...</Text>
-            </View>
-          ) : (
-            <Text style={styles.buttonText}>🗺️ Sync OpenStreetMap</Text>
-          )}
+          <Text style={styles.buttonText}>➕ Add Landmark</Text>
         </TouchableOpacity>
 
-        {showNearby && (
+        {nearbyLandmarks.length > 0 && (
           <View style={styles.landmarksList}>
-            <View style={styles.listHeader}>
-              <Text style={styles.listTitle}>Nearby Landmarks ({nearbyLandmarks.length})</Text>
-              {dataSource && (
-                <Text style={styles.dataSourceBadge}>{getDataSourceLabel()}</Text>
-              )}
-            </View>
+            <Text style={styles.listTitle}>
+              Nearby ({nearbyLandmarks.length})
+            </Text>
 
             <ScrollView style={styles.scrollView} nestedScrollEnabled={true}>
               {nearbyLandmarks.map((landmark, index) => {
-                const landmarkId = landmark._id || landmark.id;
-                const isCreator = landmark.createdBy === currentUserId;
+                const landmarkId = landmark.id || landmark._id;
+                const isOffline = !landmark.synced || landmarkId?.startsWith('offline_');
 
                 return (
                   <View key={landmarkId || index} style={styles.landmarkItem}>
@@ -311,17 +322,14 @@ const LandmarkManager = ({ currentLocation, onLandmarkAdded }) => {
                       <View style={styles.landmarkMainInfo}>
                         <Text style={styles.landmarkName}>
                           {getCategoryEmoji(landmark.category)} {landmark.name}
+                          {isOffline && <Text style={styles.offlineIndicator}> 🔄</Text>}
                         </Text>
                         {landmark.description && (
                           <Text style={styles.landmarkDescription}>{landmark.description}</Text>
                         )}
-                        <Text style={styles.landmarkCategory}>
-                          Category: {landmark.category}
-                          {landmark.createdByUsername && ` • By ${landmark.createdByUsername}`}
-                        </Text>
                       </View>
 
-                      {isCreator && landmarkId && (
+                      {landmarkId && (
                         <TouchableOpacity
                           style={styles.deleteButton}
                           onPress={() => handleDeleteLandmark(landmarkId, landmark.name)}
@@ -333,17 +341,11 @@ const LandmarkManager = ({ currentLocation, onLandmarkAdded }) => {
                   </View>
                 );
               })}
-              {nearbyLandmarks.length === 0 && (
-                <View style={styles.emptyState}>
-                  <Text style={styles.emptyText}>No landmarks found nearby</Text>
-                  <Text style={styles.emptyHint}>
-                    Try syncing OpenStreetMap or adding landmarks manually
-                  </Text>
-                </View>
-              )}
             </ScrollView>
           </View>
         )}
+
+        {loading && <ActivityIndicator size="small" color="#007AFF" style={styles.loader} />}
       </View>
 
       {/* Add Landmark Modal */}
@@ -362,7 +364,6 @@ const LandmarkManager = ({ currentLocation, onLandmarkAdded }) => {
               placeholder="Landmark Name"
               value={name}
               onChangeText={setName}
-              editable={!loading}
             />
 
             <TextInput
@@ -372,7 +373,6 @@ const LandmarkManager = ({ currentLocation, onLandmarkAdded }) => {
               onChangeText={setDescription}
               multiline
               numberOfLines={3}
-              editable={!loading}
             />
 
             <Text style={styles.label}>Category:</Text>
@@ -385,7 +385,6 @@ const LandmarkManager = ({ currentLocation, onLandmarkAdded }) => {
                     category === cat.value && styles.categoryButtonActive,
                   ]}
                   onPress={() => setCategory(cat.value)}
-                  disabled={loading}
                 >
                   <Text
                     style={[
@@ -403,7 +402,6 @@ const LandmarkManager = ({ currentLocation, onLandmarkAdded }) => {
               <TouchableOpacity
                 style={[styles.modalButton, styles.cancelButton]}
                 onPress={() => setModalVisible(false)}
-                disabled={loading}
               >
                 <Text style={styles.cancelButtonText}>Cancel</Text>
               </TouchableOpacity>
@@ -411,13 +409,8 @@ const LandmarkManager = ({ currentLocation, onLandmarkAdded }) => {
               <TouchableOpacity
                 style={[styles.modalButton, styles.submitButton]}
                 onPress={handleAddLandmark}
-                disabled={loading}
               >
-                {loading ? (
-                  <ActivityIndicator color="#fff" size="small" />
-                ) : (
-                  <Text style={styles.submitButtonText}>Add</Text>
-                )}
+                <Text style={styles.submitButtonText}>Add</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -434,61 +427,42 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     marginBottom: 15,
   },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 15,
+  },
   title: {
     fontSize: 18,
     fontWeight: '600',
-    marginBottom: 15,
     color: '#333',
   },
-  buttonRow: {
-    flexDirection: 'row',
-    gap: 10,
-    marginBottom: 10,
+  offlineBadge: {
+    fontSize: 12,
+    color: '#FF3B30',
+    fontWeight: '600',
   },
   button: {
-    flex: 1,
     padding: 12,
     borderRadius: 8,
     alignItems: 'center',
-  },
-  primaryButton: {
+    marginBottom: 10,
     backgroundColor: '#007AFF',
-  },
-  secondaryButton: {
-    backgroundColor: '#fff',
-    borderWidth: 1,
-    borderColor: '#007AFF',
-  },
-  osmButton: {
-    backgroundColor: '#7EBC89',
   },
   buttonText: {
     color: '#fff',
-    fontWeight: '600',
-  },
-  buttonTextSecondary: {
-    color: '#007AFF',
     fontWeight: '600',
   },
   buttonDisabled: {
     backgroundColor: '#ccc',
     opacity: 0.6,
   },
-  syncingContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  syncingText: {
-    marginLeft: 8,
-  },
   warningBanner: {
     backgroundColor: '#FFF3CD',
     padding: 10,
     borderRadius: 8,
     marginBottom: 10,
-    borderLeftWidth: 4,
-    borderLeftColor: '#FFC107',
   },
   warningText: {
     color: '#856404',
@@ -498,24 +472,11 @@ const styles = StyleSheet.create({
   landmarksList: {
     marginTop: 15,
   },
-  listHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 10,
-  },
   listTitle: {
     fontSize: 16,
     fontWeight: '600',
     color: '#333',
-  },
-  dataSourceBadge: {
-    fontSize: 12,
-    color: '#666',
-    backgroundColor: '#f0f0f0',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
+    marginBottom: 10,
   },
   scrollView: {
     maxHeight: 300,
@@ -540,14 +501,14 @@ const styles = StyleSheet.create({
     color: '#333',
     marginBottom: 4,
   },
+  offlineIndicator: {
+    fontSize: 12,
+    color: '#FF9500',
+  },
   landmarkDescription: {
     fontSize: 14,
     color: '#666',
     marginBottom: 4,
-  },
-  landmarkCategory: {
-    fontSize: 12,
-    color: '#999',
   },
   deleteButton: {
     padding: 8,
@@ -556,21 +517,8 @@ const styles = StyleSheet.create({
   deleteButtonText: {
     fontSize: 20,
   },
-  emptyState: {
-    padding: 20,
-    alignItems: 'center',
-  },
-  emptyText: {
-    textAlign: 'center',
-    color: '#999',
-    fontStyle: 'italic',
-    fontSize: 16,
-    marginBottom: 8,
-  },
-  emptyHint: {
-    textAlign: 'center',
-    color: '#bbb',
-    fontSize: 12,
+  loader: {
+    marginTop: 10,
   },
   modalOverlay: {
     flex: 1,

@@ -70,11 +70,12 @@
           "bluetoothAlwaysUsageDescription": "This app uses Bluetooth to discover nearby devices."
         }
       ],
-      "expo-web-browser"
+      "expo-web-browser",
+      "@maplibre/maplibre-react-native"
     ],
     "extra": {
       "eas": {
-        "projectId": "758d3860-20e3-468c-86d3-fa2c2f3bd505"
+        "projectId": "93027292-552b-4606-a404-d65297c0a416"
       }
     }
   }

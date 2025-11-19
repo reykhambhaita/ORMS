@@ -11,6 +11,8 @@
   "dependencies": {
     "@clerk/clerk-expo": "^2.17.1",
     "@expo/metro-runtime": "~5.0.5",
+    "@maplibre/maplibre-react-native": "^10.4.0",
+    "@maptiler/sdk": "^3.8.0",
     "@react-native-async-storage/async-storage": "2.1.2",
     "@react-native-community/geolocation": "^3.4.0",
     "@react-native-community/netinfo": "^11.4.1",
@@ -32,6 +34,7 @@
     "react-native": "0.79.6",
     "react-native-ble-plx": "^3.5.0",
     "react-native-gesture-handler": "~2.24.0",
+    "react-native-maps": "^1.20.1",
     "react-native-permissions": "^5.4.2",
     "react-native-reanimated": "~3.17.4",
     "react-native-safe-area-context": "5.4.0",

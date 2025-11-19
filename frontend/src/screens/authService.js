@@ -1,11 +1,12 @@
 // src/services/authService.js
+// CHANGES: Removed all OSM-related methods
+// Kept core landmark/mechanic CRUD
+
 import * as SecureStore from 'expo-secure-store';
 
 const API_BASE_URL = 'https://backend-three-sepia-16.vercel.app';
 const TOKEN_KEY = 'orms_auth_token';
 const USER_KEY = 'orms_user_data';
-
-const OVERPASS_API_URL = 'https://overpass-api.de/api/interpreter';
 
 class AuthService {
   constructor() {
@@ -152,7 +153,6 @@ class AuthService {
         const data = await response.json();
 
         if (!response.ok) {
-          // Only logout if explicitly unauthorized, not on network errors
           if (response.status === 401 && (data.code === 'INVALID_TOKEN' || data.code === 'NO_TOKEN')) {
             await this.logout();
             throw new Error(data.error || 'Authentication expired');
@@ -169,7 +169,6 @@ class AuthService {
           mechanicProfile: data.mechanicProfile
         };
       } catch (fetchError) {
-        // If network error but we have cached user, use it
         if (this.user && (fetchError.message === 'timeout' || fetchError.message.includes('Network'))) {
           console.log('Network error, using cached user');
           return {
@@ -183,7 +182,6 @@ class AuthService {
       }
     } catch (error) {
       console.error('Get current user error:', error);
-      // Return cached user if available, otherwise fail
       if (this.user) {
         return {
           success: true,
@@ -238,16 +236,12 @@ class AuthService {
     }
   }
 
-  // Helper: Check if online
   isOnline() {
     return navigator?.onLine !== false;
   }
 
   // === LANDMARK METHODS ===
 
-  /**
-   * Create a new landmark
-   */
   async createLandmark(name, description, category, latitude, longitude) {
     try {
       await this.initialize();
@@ -284,10 +278,7 @@ class AuthService {
     }
   }
 
-  /**
-   * Get nearby landmarks from database
-   */
-  async getNearbyLandmarks(latitude, longitude, radius = 5000, category = null) {
+  async getNearbyLandmarks(latitude, longitude, radius = 10000, category = null) {
     try {
       await this.initialize();
 
@@ -345,74 +336,7 @@ class AuthService {
     }
   }
 
-  /**
-   * Fetch from OpenStreetMap and return places
-   */
-  async fetchOpenStreetMapNearby(latitude, longitude, radius = 5000) {
-    try {
-      const radiusMeters = radius;
-
-      const query = `
-        [out:json][timeout:25];
-        (
-          node["amenity"~"restaurant|cafe|fast_food|fuel|hospital|pharmacy|parking"](around:${radiusMeters},${latitude},${longitude});
-          node["shop"](around:${radiusMeters},${latitude},${longitude});
-          node["tourism"](around:${radiusMeters},${latitude},${longitude});
-          node["historic"](around:${radiusMeters},${latitude},${longitude});
-        );
-        out body;
-      `;
-
-      const response = await Promise.race([
-        fetch(OVERPASS_API_URL, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/x-www-form-urlencoded',
-          },
-          body: `data=${encodeURIComponent(query)}`,
-        }),
-        new Promise((_, reject) =>
-          setTimeout(() => reject(new Error('timeout')), 15000)
-        )
-      ]);
-
-      if (!response.ok) {
-        throw new Error('Failed to fetch from OpenStreetMap');
-      }
-
-      const data = await response.json();
-
-      const places = (data.elements || []).map(element => ({
-        id: element.id,
-        name: element.tags?.name || 'Unnamed Place',
-        latitude: element.lat,
-        longitude: element.lon,
-        category: this.mapOSMTagToCategory(element.tags),
-        description: this.getOSMDescription(element.tags),
-        tags: element.tags,
-      }));
-
-      const namedPlaces = places.filter(p => p.name !== 'Unnamed Place');
-
-      return {
-        success: true,
-        places: namedPlaces,
-        source: 'osm'
-      };
-    } catch (error) {
-      console.error('OpenStreetMap API error:', error);
-      return {
-        success: false,
-        error: error.message,
-        places: []
-      };
-    }
-  }
-
-  /**
-   * Sync OpenStreetMap places to backend database
-   */
-  async syncOpenStreetMapToBackend(latitude, longitude, radius = 5000) {
+  async deleteLandmark(landmarkId) {
     try {
       await this.initialize();
 
@@ -420,86 +344,25 @@ class AuthService {
         return { success: false, error: 'Not authenticated' };
       }
 
-      console.log('🌍 Starting OpenStreetMap sync...');
-
-      const response = await fetch(`${API_BASE_URL}/api/landmarks/sync-osm`, {
-        method: 'POST',
+      const response = await fetch(`${API_BASE_URL}/api/landmarks/${landmarkId}`, {
+        method: 'DELETE',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${this.token}`
-        },
-        body: JSON.stringify({
-          latitude,
-          longitude,
-          radius
-        })
+        }
       });
 
       const data = await response.json();
 
       if (response.ok) {
-        console.log('✅ Sync successful:', data);
-        return {
-          success: true,
-          synced: data.synced,
-          duplicate: data.duplicate,
-          failed: data.failed,
-          total: data.total
-        };
+        return { success: true };
       } else {
-        console.error('❌ Sync failed:', data.error);
-        return { success: false, error: data.error || 'Failed to sync' };
+        return { success: false, error: data.error || 'Failed to delete landmark' };
       }
     } catch (error) {
-      console.error('Sync OpenStreetMap error:', error);
+      console.error('Delete landmark error:', error);
       return { success: false, error: error.message };
     }
-  }
-
-  mapOSMTagToCategory(tags) {
-    if (!tags) return 'other';
-
-    if (tags.amenity) {
-      const amenityMap = {
-        restaurant: 'restaurant',
-        cafe: 'restaurant',
-        fast_food: 'restaurant',
-        food_court: 'restaurant',
-        fuel: 'gas_station',
-        charging_station: 'gas_station',
-        hospital: 'hospital',
-        clinic: 'hospital',
-        pharmacy: 'hospital',
-        doctors: 'hospital',
-        parking: 'parking',
-        parking_space: 'parking',
-      };
-      if (amenityMap[tags.amenity]) {
-        return amenityMap[tags.amenity];
-      }
-    }
-
-    if (tags.shop) {
-      return 'shop';
-    }
-
-    if (tags.tourism || tags.historic) {
-      return 'landmark';
-    }
-
-    return 'other';
-  }
-
-  getOSMDescription(tags) {
-    const parts = [];
-
-    if (tags.amenity) parts.push(tags.amenity.replace(/_/g, ' '));
-    if (tags.shop) parts.push(`${tags.shop} shop`.replace(/_/g, ' '));
-    if (tags.cuisine) parts.push(`Cuisine: ${tags.cuisine}`);
-    if (tags.opening_hours) parts.push(`Hours: ${tags.opening_hours}`);
-    if (tags['addr:street']) parts.push(tags['addr:street']);
-
-    return parts.join(', ') || 'No description available';
   }
 
   // === MECHANIC METHODS ===
@@ -543,12 +406,14 @@ class AuthService {
     });
   }
 
-  /**
-   * Get nearby mechanics from database
-   */
-  async getNearbyMechanics(latitude, longitude, radius = 5000) {
+  async getNearbyMechanics(latitude, longitude, radius = 10000) {
     try {
       await this.initialize();
+
+      console.log('🔍 [authService.getNearbyMechanics] Starting request');
+      console.log('   API_BASE_URL:', API_BASE_URL);
+      console.log('   Params:', { latitude, longitude, radius });
+      console.log('   Has token:', !!this.token);
 
       const params = new URLSearchParams({
         lat: latitude.toString(),
@@ -564,8 +429,11 @@ class AuthService {
         headers['Authorization'] = `Bearer ${this.token}`;
       }
 
+      const url = `${API_BASE_URL}/api/mechanics/nearby?${params}`;
+      console.log('   Full URL:', url);
+
       const response = await Promise.race([
-        fetch(`${API_BASE_URL}/api/mechanics/nearby?${params}`, {
+        fetch(url, {
           method: 'GET',
           headers
         }),
@@ -574,16 +442,23 @@ class AuthService {
         )
       ]);
 
+      console.log('✅ [authService.getNearbyMechanics] Response received');
+      console.log('   Status:', response.status);
+      console.log('   OK:', response.ok);
+
       const data = await response.json();
+      console.log('   Response data:', JSON.stringify(data, null, 2));
 
       if (response.ok) {
+        console.log('✅ [authService.getNearbyMechanics] Success! Found', data.data?.length || 0, 'mechanics');
         return {
           success: true,
           data: data.data || [],
           source: 'database'
         };
       } else {
-        console.error('Mechanics fetch failed:', data.error);
+        console.error('❌ [authService.getNearbyMechanics] Fetch failed:', data.error);
+        console.error('   Full error response:', JSON.stringify(data, null, 2));
         return {
           success: false,
           error: data.error || 'Failed to fetch mechanics',
@@ -591,7 +466,9 @@ class AuthService {
         };
       }
     } catch (error) {
-      console.error('Mechanic API error:', error.message);
+      console.error('❌ [authService.getNearbyMechanics] Exception:', error.message);
+      console.error('   Error type:', error.name);
+      console.error('   Stack:', error.stack);
       return {
         success: false,
         error: error.message,
@@ -600,38 +477,6 @@ class AuthService {
     }
   }
 
-  async deleteLandmark(landmarkId) {
-    try {
-      await this.initialize();
-
-      if (!this.token) {
-        return { success: false, error: 'Not authenticated' };
-      }
-
-      const response = await fetch(`${API_BASE_URL}/api/landmarks/${landmarkId}`, {
-        method: 'DELETE',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${this.token}`
-        }
-      });
-
-      const data = await response.json();
-
-      if (response.ok) {
-        return { success: true };
-      } else {
-        return { success: false, error: data.error || 'Failed to delete landmark' };
-      }
-    } catch (error) {
-      console.error('Delete landmark error:', error);
-      return { success: false, error: error.message };
-    }
-  }
-
-  /**
-   * Generic authenticated request helper
-   */
   async authenticatedRequest(endpoint, options = {}) {
     try {
       await this.initialize();

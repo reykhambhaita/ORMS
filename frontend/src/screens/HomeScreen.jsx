@@ -3,11 +3,14 @@ import { useState } from 'react';
 import { Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import LandmarkManager from '../components/landmarks/LandmarkManager';
 import MultiModalLocationTracker from '../components/location/MultiModalLocationTracker';
+import OfflineMapView from '../components/map/OfflineMapView';
 import MechanicFinder from '../components/mechanics/MechanicFinder';
 import authService from '../screens/authService';
 
 const HomeScreen = ({ navigation }) => {
   const [currentLocation, setCurrentLocation] = useState(null);
+  const [landmarks, setLandmarks] = useState([]);
+  const [mechanics, setMechanics] = useState([]);
 
   const handleLogout = async () => {
     Alert.alert(
@@ -38,8 +41,12 @@ const HomeScreen = ({ navigation }) => {
     setCurrentLocation(location);
   };
 
-  const handleLandmarkAdded = (landmark) => {
-    console.log('Landmark added:', landmark);
+  const handleLandmarksUpdate = (landmarkList) => {
+    setLandmarks(landmarkList);
+  };
+
+  const handleMechanicsUpdate = (mechanicList) => {
+    setMechanics(mechanicList);
   };
 
   return (
@@ -47,16 +54,24 @@ const HomeScreen = ({ navigation }) => {
       <ScrollView style={styles.scrollView}>
         <MultiModalLocationTracker
           onLocationUpdate={handleLocationUpdate}
+          onLandmarksUpdate={handleLandmarksUpdate}
+          onMechanicsUpdate={handleMechanicsUpdate}
         />
 
-        {/* NEW: Mechanic Finder Component */}
+        <OfflineMapView
+          currentLocation={currentLocation}
+          landmarks={landmarks}
+          mechanics={mechanics}
+        />
+
         <MechanicFinder
           currentLocation={currentLocation}
+          onMechanicsUpdate={handleMechanicsUpdate}
         />
 
         <LandmarkManager
           currentLocation={currentLocation}
-          onLandmarkAdded={handleLandmarkAdded}
+          onLandmarksUpdate={handleLandmarksUpdate}
         />
       </ScrollView>
 
@@ -64,10 +79,10 @@ const HomeScreen = ({ navigation }) => {
         style={styles.logoutButton}
         onPress={handleLogout}
       >
-        <Text style={styles.logoutButtonText}>🚪 Logout</Text>
+        <Text style={styles.logoutButtonText}>🔒 Logout</Text>
       </TouchableOpacity>
     </View>
-  );
+  );  fi
 };
 
 const styles = StyleSheet.create({
