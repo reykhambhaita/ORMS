@@ -54,13 +54,17 @@ export const createReviewHandler = async (req, res) => {
     // Update mechanic's average rating
     await updateMechanicRating(mechanicId);
 
+    // Fetch the updated mechanic to get the new rating
+    const updatedMechanic = await Mechanic.findById(mechanicId);
+
     res.status(201).json({
       success: true,
       data: {
         id: review._id,
         rating: review.rating,
         comment: review.comment,
-        createdAt: review.createdAt
+        createdAt: review.createdAt,
+        mechanicRating: updatedMechanic.rating // Include updated mechanic rating
       }
     });
   } catch (error) {
