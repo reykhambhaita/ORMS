@@ -98,6 +98,7 @@ export const signup = async (req, res) => {
         email: user.email,
         username: user.username,
         role: user.role,
+        avatar: user.avatar,
         createdAt: user.createdAt
       },
       mechanicProfile: mechanicProfile ? {
@@ -159,6 +160,7 @@ export const login = async (req, res) => {
         email: user.email,
         username: user.username,
         role: user.role,
+        avatar: user.avatar,
         createdAt: user.createdAt
       },
       mechanicProfile: mechanicProfile ? {
@@ -200,6 +202,7 @@ export const getCurrentUser = async (req, res) => {
         email: user.email,
         username: user.username,
         role: user.role,
+        avatar: user.avatar,
         createdAt: user.createdAt
       },
       mechanicProfile: mechanicProfile ? {
@@ -223,11 +226,11 @@ export const getCurrentUser = async (req, res) => {
 
 export const updateProfile = async (req, res) => {
   try {
-    const { username, email } = req.body;
+    const { username, email, avatar } = req.body;
 
-    if (!username && !email) {
+    if (!username && !email && !avatar) {
       return res.status(400).json({
-        error: 'At least one field (username or email) is required'
+        error: 'At least one field (username, email, or avatar) is required'
       });
     }
 
@@ -263,6 +266,11 @@ export const updateProfile = async (req, res) => {
       updates.email = email;
     }
 
+    // Update avatar if provided
+    if (avatar !== undefined) {
+      updates.avatar = avatar;
+    }
+
     // Update the user
     const user = await User.findByIdAndUpdate(
       req.userId,
@@ -281,6 +289,7 @@ export const updateProfile = async (req, res) => {
         email: user.email,
         username: user.username,
         role: user.role,
+        avatar: user.avatar,
         createdAt: user.createdAt
       }
     });
@@ -290,5 +299,51 @@ export const updateProfile = async (req, res) => {
   }
 };
 
-// Add this route to backend/index.js in the AUTH ROUTES section:
+export const uploadAvatar = async (req, res) => {
+  try {
+    const { avatar } = req.body;
+
+    if (!avatar) {
+      return res.status(400).json({
+        error: 'Avatar data is required'
+      });
+    }
+
+    // Validate base64 format (basic check)
+    if (!avatar.startsWith('data:image/')) {
+      return res.status(400).json({
+        error: 'Invalid avatar format. Must be a base64 encoded image'
+      });
+    }
+
+    // Update user's avatar
+    const user = await User.findByIdAndUpdate(
+      req.userId,
+      { $set: { avatar } },
+      { new: true }
+    ).select('-password');
+
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    res.json({
+      success: true,
+      user: {
+        id: user._id,
+        email: user.email,
+        username: user.username,
+        role: user.role,
+        avatar: user.avatar,
+        createdAt: user.createdAt
+      }
+    });
+  } catch (error) {
+    console.error('Upload avatar error:', error);
+    res.status(500).json({ error: 'Failed to upload avatar' });
+  }
+};
+
+// Add these routes to backend/index.js in the AUTH ROUTES section:
 // app.patch('/api/auth/update-profile', authenticateToken, updateProfile);
+// app.patch('/api/auth/upload-avatar', authenticateToken, uploadAvatar);

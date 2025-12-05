@@ -141,6 +141,7 @@ app.get('/api/user/location-history', authenticateToken, async (req, res) => {
   }
 });
 app.patch('/api/auth/update-profile', authenticateToken, updateProfile);
+app.patch('/api/auth/upload-avatar', authenticateToken, uploadAvatar);
 // === LANDMARK ROUTES ===
 
 app.get('/api/landmarks/nearby', optionalAuth, getNearbyLandmarksHandler);
