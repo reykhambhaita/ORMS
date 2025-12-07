@@ -1,10 +1,10 @@
 // src/screens/SignupScreen.jsx
+import { RussoOne_400Regular, useFonts } from '@expo-google-fonts/russo-one';
+import MaskedView from '@react-native-masked-view/masked-view';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useState } from 'react';
 import {
-  ActivityIndicator,
   Alert,
-  KeyboardAvoidingView,
-  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -12,22 +12,22 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import authService from '../screens/authService';
 
 const SignupScreen = ({ navigation }) => {
+  const [fontsLoaded] = useFonts({
+    RussoOne_400Regular,
+  });
+
   const [email, setEmail] = useState('');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [role, setRole] = useState('user');
 
-  // NEW: Mechanic-specific fields
-  const [mechanicName, setMechanicName] = useState('');
-  const [mechanicPhone, setMechanicPhone] = useState('');
+  if (!fontsLoaded) {
+    return null;
+  }
 
-  const [loading, setLoading] = useState(false);
-
-  const handleSignup = async () => {
+  const handleContinue = () => {
     if (!email || !username || !password || !confirmPassword) {
       Alert.alert('Error', 'Please fill in all fields');
       return;
@@ -43,294 +43,219 @@ const SignupScreen = ({ navigation }) => {
       return;
     }
 
-    // Validate mechanic fields if role is mechanic
-    if (role === 'mechanic') {
-      if (!mechanicName || !mechanicPhone) {
-        Alert.alert('Error', 'Please provide your name and phone number');
-        return;
-      }
-      if (mechanicPhone.length < 10) {
-        Alert.alert('Error', 'Please provide a valid phone number');
-        return;
-      }
-    }
-
-
-    setLoading(true);
-
-    // NEW: Prepare mechanic data if applicable
-    const mechanicData = role === 'mechanic' ? {
-      name: mechanicName,
-      phone: mechanicPhone,
-      specialties: [],
-      available: true
-    } : undefined;
-
-    const result = await authService.signup(email, username, password, role, mechanicData);
-    setLoading(false);
-
-    if (result.success) {
-      console.log('Signup successful:', result.user);
-      navigation.replace('Home');
-    } else {
-      Alert.alert('Signup Failed', result.error);
-    }
+    // Navigate to role selection with user data
+    navigation.navigate('RoleSelection', {
+      email,
+      username,
+      password,
+    });
   };
 
   return (
-    <KeyboardAvoidingView
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      style={styles.container}
-    >
-      <ScrollView contentContainerStyle={styles.scrollContent}>
-        <View style={styles.content}>
-          <Text style={styles.title}>Create Account</Text>
-          <Text style={styles.subtitle}>Join ORMS today</Text>
+    <View style={styles.container}>
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        keyboardShouldPersistTaps="handled"
+        bounces={false}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* Header Section with Gradient */}
+        <LinearGradient
+          colors={['#003355', '#001122']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.headerSection}
+        >
+          {/* Logo with split-color effect */}
+          <View style={styles.logoContainer}>
+            <MaskedView
+              maskElement={
+                <Text style={styles.logoText}>Create Account</Text>
+              }
+            >
+              <LinearGradient
+                colors={['#ffffff', '#ffffff', '#001122', '#001122']}
+                locations={[0, 0.41, 0.41, 1]}
+                style={styles.logoGradient}
+              />
+            </MaskedView>
+          </View>
+        </LinearGradient>
 
-          <TextInput
-            style={styles.input}
-            placeholder="Email"
-            value={email}
-            onChangeText={setEmail}
-            autoCapitalize="none"
-            keyboardType="email-address"
-            editable={!loading}
-          />
-
-          <TextInput
-            style={styles.input}
-            placeholder="Username"
-            value={username}
-            onChangeText={setUsername}
-            autoCapitalize="none"
-            editable={!loading}
-          />
-
-          <TextInput
-            style={styles.input}
-            placeholder="Password"
-            value={password}
-            onChangeText={setPassword}
-            secureTextEntry
-            editable={!loading}
-          />
-
-          <TextInput
-            style={styles.input}
-            placeholder="Confirm Password"
-            value={confirmPassword}
-            onChangeText={setConfirmPassword}
-            secureTextEntry
-            editable={!loading}
-          />
-
-          {/* Role Selection */}
-          <View style={styles.roleContainer}>
-            <Text style={styles.roleLabel}>I am a:</Text>
-            <View style={styles.roleButtons}>
-              <TouchableOpacity
-                style={[
-                  styles.roleButton,
-                  role === 'user' && styles.roleButtonActive,
-                ]}
-                onPress={() => setRole('user')}
-                disabled={loading}
-              >
-                <Text
-                  style={[
-                    styles.roleButtonText,
-                    role === 'user' && styles.roleButtonTextActive,
-                  ]}
-                >
-                  👤 User
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[
-                  styles.roleButton,
-                  role === 'mechanic' && styles.roleButtonActive,
-                ]}
-                onPress={() => setRole('mechanic')}
-                disabled={loading}
-              >
-                <Text
-                  style={[
-                    styles.roleButtonText,
-                    role === 'mechanic' && styles.roleButtonTextActive,
-                  ]}
-                >
-                  🔧 Mechanic
-                </Text>
-              </TouchableOpacity>
+        {/* Form Section */}
+        <View style={styles.formSection}>
+          <View style={styles.formContent}>
+            {/* Email Input */}
+            <View style={styles.inputContainer}>
+              <Text style={styles.inputLabel}>EMAIL</Text>
+              <TextInput
+                placeholder="user@example.com"
+                placeholderTextColor="#999"
+                value={email}
+                onChangeText={setEmail}
+                autoCapitalize="none"
+                keyboardType="email-address"
+                style={styles.inputField}
+              />
             </View>
+
+            {/* Username Input */}
+            <View style={styles.inputContainer}>
+              <Text style={styles.inputLabel}>USERNAME</Text>
+              <TextInput
+                placeholder="username"
+                placeholderTextColor="#999"
+                value={username}
+                onChangeText={setUsername}
+                autoCapitalize="none"
+                style={styles.inputField}
+              />
+            </View>
+
+            {/* Password Input */}
+            <View style={styles.inputContainer}>
+              <Text style={styles.inputLabel}>PASSWORD</Text>
+              <TextInput
+                placeholder="********"
+                placeholderTextColor="#999"
+                value={password}
+                onChangeText={setPassword}
+                secureTextEntry
+                style={styles.inputField}
+              />
+            </View>
+
+            {/* Confirm Password Input */}
+            <View style={styles.inputContainer}>
+              <Text style={styles.inputLabel}>CONFIRM PASSWORD</Text>
+              <TextInput
+                placeholder="********"
+                placeholderTextColor="#999"
+                value={confirmPassword}
+                onChangeText={setConfirmPassword}
+                secureTextEntry
+                style={styles.inputField}
+              />
+            </View>
+
+            {/* Continue Button */}
+            <TouchableOpacity
+              onPress={handleContinue}
+              style={styles.continueButton}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.continueButtonText}>continue</Text>
+            </TouchableOpacity>
           </View>
 
-          {/* NEW: Mechanic-specific fields */}
-          {role === 'mechanic' && (
-            <View style={styles.mechanicFields}>
-              <Text style={styles.sectionTitle}>Mechanic Profile</Text>
-
-              <TextInput
-                style={styles.input}
-                placeholder="Full Name"
-                value={mechanicName}
-                onChangeText={setMechanicName}
-                editable={!loading}
-              />
-
-              <TextInput
-                style={styles.input}
-                placeholder="Phone Number"
-                value={mechanicPhone}
-                onChangeText={setMechanicPhone}
-                keyboardType="phone-pad"
-                editable={!loading}
-              />
-
-              <Text style={styles.helperText}>
-                📍 Your location will be set when you start the app
+          {/* Login Link */}
+          <View style={styles.loginContainer}>
+            <Text style={styles.loginText}>
+              Already have an account?{' '}
+              <Text
+                style={styles.loginLink}
+                onPress={() => navigation.navigate('Login')}
+              >
+                Login
               </Text>
-            </View>
-          )}
-
-          <TouchableOpacity
-            style={[styles.button, loading && styles.buttonDisabled]}
-            onPress={handleSignup}
-            disabled={loading}
-          >
-            {loading ? (
-              <ActivityIndicator color="#fff" />
-            ) : (
-              <Text style={styles.buttonText}>Sign Up</Text>
-            )}
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.linkButton}
-            onPress={() => navigation.navigate('Login')}
-            disabled={loading}
-          >
-            <Text style={styles.linkText}>
-              Already have an account? Login
             </Text>
-          </TouchableOpacity>
+          </View>
         </View>
       </ScrollView>
-    </KeyboardAvoidingView>
+    </View>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: '#ffffff',
   },
   scrollContent: {
     flexGrow: 1,
   },
-  content: {
-    flex: 1,
+  headerSection: {
+    height: '40%',
+    minHeight: 300,
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+    paddingBottom: 0,
+  },
+  logoContainer: {
+    marginBottom: -18,
+    zIndex: 20,
     justifyContent: 'center',
-    padding: 20,
+
   },
-  title: {
-    fontSize: 32,
-    fontWeight: 'bold',
-    textAlign: 'center',
-    marginBottom: 10,
-    color: '#333',
+  logoText: {
+    fontSize: 38,
+    fontFamily: 'RussoOne_400Regular',
+    letterSpacing: -1,
+
+    alignSelf: 'center',
   },
-  subtitle: {
-    fontSize: 16,
-    textAlign: 'center',
-    marginBottom: 40,
-    color: '#666',
+  logoGradient: {
+    height: 60,
+    width: 320,
   },
-  input: {
-    backgroundColor: '#fff',
-    padding: 15,
-    borderRadius: 10,
-    marginBottom: 15,
-    fontSize: 16,
-    borderWidth: 1,
-    borderColor: '#ddd',
-  },
-  roleContainer: {
-    marginBottom: 20,
-  },
-  roleLabel: {
-    fontSize: 16,
-    fontWeight: '600',
-    marginBottom: 10,
-    color: '#333',
-  },
-  roleButtons: {
-    flexDirection: 'row',
-    gap: 10,
-  },
-  roleButton: {
+  formSection: {
     flex: 1,
-    padding: 15,
-    borderRadius: 10,
-    backgroundColor: '#fff',
-    borderWidth: 2,
-    borderColor: '#ddd',
-    alignItems: 'center',
+    backgroundColor: '#ffffff',
+    borderTopLeftRadius: 32,
+    borderTopRightRadius: 32,
+    marginTop: -16,
+    paddingHorizontal: 32,
+    paddingTop: 70,
+    paddingBottom: 130,
+    zIndex: 10,
   },
-  roleButtonActive: {
-    borderColor: '#007AFF',
-    backgroundColor: '#E3F2FD',
+  formContent: {
+    flex: 1,
   },
-  roleButtonText: {
-    fontSize: 16,
-    color: '#666',
-    fontWeight: '500',
+  inputContainer: {
+    marginBottom: 32,
   },
-  roleButtonTextActive: {
-    color: '#007AFF',
-    fontWeight: '600',
-  },
-  mechanicFields: {
-    backgroundColor: '#E3F2FD',
-    padding: 15,
-    borderRadius: 10,
-    marginBottom: 20,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    marginBottom: 15,
-    color: '#007AFF',
-  },
-  helperText: {
+  inputLabel: {
     fontSize: 12,
-    color: '#666',
-    fontStyle: 'italic',
-    marginTop: -5,
+    fontWeight: '500',
+    color: '#555',
+    textTransform: 'uppercase',
+    marginBottom: 8,
+    letterSpacing: 0.5,
   },
-  button: {
-    backgroundColor: '#007AFF',
-    padding: 15,
-    borderRadius: 10,
+  inputField: {
+    width: '100%',
+    paddingVertical: 8,
+    paddingHorizontal: 0,
+    borderBottomWidth: 1,
+    borderBottomColor: '#ccc',
+    fontSize: 16,
+    color: '#333',
+  },
+  continueButton: {
+    backgroundColor: '#001f3f',
+    height: 56,
+    borderRadius: 32,
     alignItems: 'center',
-    marginTop: 10,
+    justifyContent: 'center',
+    marginTop: 16,
   },
-  buttonDisabled: {
-    backgroundColor: '#999',
-  },
-  buttonText: {
-    color: '#fff',
-    fontSize: 18,
+  continueButtonText: {
+    color: '#ffffff',
+    fontSize: 20,
     fontWeight: '600',
   },
-  linkButton: {
-    marginTop: 20,
+  loginContainer: {
     alignItems: 'center',
+    marginTop: 32,
   },
-  linkText: {
-    color: '#007AFF',
-    fontSize: 16,
+  loginText: {
+    fontSize: 14,
+    color: '#6b7280',
+  },
+  loginLink: {
+    color: '#001f3f',
+    fontWeight: '600',
   },
 });
 

@@ -1,4 +1,7 @@
 // src/screens/AuthLoadingScreen.jsx
+import { RussoOne_400Regular, useFonts } from '@expo-google-fonts/russo-one';
+import MaskedView from '@react-native-masked-view/masked-view';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -9,6 +12,10 @@ import {
 import authService from './authService';
 
 const AuthLoadingScreen = ({ navigation }) => {
+  const [fontsLoaded] = useFonts({
+    RussoOne_400Regular,
+  });
+
   const [statusMessage, setStatusMessage] = useState('Initializing...');
 
   useEffect(() => {
@@ -44,14 +51,14 @@ const AuthLoadingScreen = ({ navigation }) => {
           // Small delay to show success message
           setTimeout(() => {
             navigation.replace('Home');
-          }, 100);
+          }, 1500);
         } else {
           // Token is invalid or expired, go to login
           console.log('Token invalid, redirecting to login');
           setStatusMessage('Session expired');
           setTimeout(() => {
             navigation.replace('Login');
-          }, 100);
+          }, 1500);
         }
       } else {
         // Not authenticated, go to login
@@ -59,7 +66,7 @@ const AuthLoadingScreen = ({ navigation }) => {
         setStatusMessage('Please log in');
         setTimeout(() => {
           navigation.replace('Login');
-        }, 100);
+        }, 1500);
       }
     } catch (error) {
       console.error('Auth check error:', error);
@@ -73,7 +80,7 @@ const AuthLoadingScreen = ({ navigation }) => {
           setStatusMessage('Offline mode - Using cached data');
           setTimeout(() => {
             navigation.replace('Home');
-          }, 100);
+          }, 1500);
           return;
         }
       } catch (cacheError) {
@@ -83,16 +90,42 @@ const AuthLoadingScreen = ({ navigation }) => {
       // If no cached credentials, go to login
       setTimeout(() => {
         navigation.replace('Login');
-      }, 100);
+      }, 1500);
     }
   };
 
+  if (!fontsLoaded) {
+    return null;
+  }
+
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>ORMS</Text>
-      <ActivityIndicator size="large" color="#007AFF" />
-      <Text style={styles.subtitle}>{statusMessage}</Text>
-    </View>
+    <LinearGradient
+      colors={['#003355', '#001122']}
+      start={{ x: 0, y: 0 }}
+      end={{ x: 1, y: 1 }}
+      style={styles.container}
+    >
+      {/* Logo with split-color effect */}
+      <View style={styles.logoContainer}>
+        <MaskedView
+          maskElement={
+            <Text style={styles.logoText}>rexGO</Text>
+          }
+        >
+          <LinearGradient
+            colors={['#ffffff', '#ffffff', '#00BFFF', '#00BFFF']}
+            locations={[0, 0.50, 0.50, 1]}
+            style={styles.logoGradient}
+          />
+        </MaskedView>
+      </View>
+
+      {/* Loading Indicator */}
+      <ActivityIndicator size="large" color="#ffffff" style={styles.loader} />
+
+      {/* Status Message */}
+      <Text style={styles.statusText}>{statusMessage}</Text>
+    </LinearGradient>
   );
 };
 
@@ -101,20 +134,31 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#f5f5f5',
   },
-  title: {
+  logoContainer: {
+    marginBottom: 40,
+    justifyContent: 'center',
+  },
+  logoText: {
     fontSize: 48,
-    fontWeight: 'bold',
-    color: '#007AFF',
-    marginBottom: 20,
+    fontFamily: 'RussoOne_400Regular',
+    letterSpacing: 1,
+    alignSelf: 'center',
   },
-  subtitle: {
-    fontSize: 16,
-    color: '#666',
-    marginTop: 20,
+  logoGradient: {
+    height: 60,
+    width: 200,
+  },
+  loader: {
+    marginVertical: 20,
+  },
+  statusText: {
+    fontSize: 14,
+    color: '#ffffff',
+    marginTop: 12,
     textAlign: 'center',
     paddingHorizontal: 40,
+    opacity: 0.8,
   },
 });
 

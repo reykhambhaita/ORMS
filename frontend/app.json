@@ -71,11 +71,12 @@
         }
       ],
       "expo-web-browser",
-      "@maplibre/maplibre-react-native"
+      "@maplibre/maplibre-react-native",
+      "expo-font"
     ],
     "extra": {
       "eas": {
-        "projectId": "4c5634a0-1667-42b8-a042-6d3f8312ecc0"
+        "projectId": "cd02aaa7-b87c-4ca1-8b44-8a83f4cbe28c"
       }
     }
   }

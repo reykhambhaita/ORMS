@@ -189,7 +189,82 @@ class AuthService {
       return { success: false, error: error.message };
     }
   }
+  // Add this method to your AuthService class in authService.js
+  // Place it after the getCurrentUser method
 
+  async updateProfile(updates) {
+    try {
+      await this.initialize();
+
+      if (!this.token) {
+        return { success: false, error: 'Not authenticated' };
+      }
+
+      const response = await fetch(`${API_BASE_URL}/api/auth/update-profile`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${this.token}`
+        },
+        body: JSON.stringify(updates)
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to update profile');
+      }
+
+      // Update cached user data
+      this.user = { ...this.user, ...data.user };
+      await SecureStore.setItemAsync(USER_KEY, JSON.stringify(this.user));
+
+      return {
+        success: true,
+        user: data.user
+      };
+    } catch (error) {
+      console.error('Update profile error:', error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  async uploadAvatar(avatarBase64) {
+    try {
+      await this.initialize();
+
+      if (!this.token) {
+        return { success: false, error: 'Not authenticated' };
+      }
+
+      const response = await fetch(`${API_BASE_URL}/api/auth/upload-avatar`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${this.token}`
+        },
+        body: JSON.stringify({ avatar: avatarBase64 })
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to upload avatar');
+      }
+
+      // Update cached user data
+      this.user = { ...this.user, ...data.user };
+      await SecureStore.setItemAsync(USER_KEY, JSON.stringify(this.user));
+
+      return {
+        success: true,
+        user: data.user
+      };
+    } catch (error) {
+      console.error('Upload avatar error:', error);
+      return { success: false, error: error.message };
+    }
+  }
   async isAuthenticated() {
     await this.initialize();
     return !!this.token;

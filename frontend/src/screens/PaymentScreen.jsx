@@ -1,25 +1,32 @@
 // src/screens/PaymentScreen.jsx
+import { RussoOne_400Regular, useFonts } from '@expo-google-fonts/russo-one';
 import { useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
-  KeyboardAvoidingView,
-  Platform,
   ScrollView,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
-  View,
+  View
 } from 'react-native';
 import authService from './authService';
 
 const PaymentScreen = ({ route, navigation }) => {
+  const [fontsLoaded] = useFonts({
+    RussoOne_400Regular,
+  });
+
   const { mechanicId, mechanicName, mechanicPhone } = route.params || {};
 
   const [amount, setAmount] = useState('');
   const [description, setDescription] = useState('');
   const [loading, setLoading] = useState(false);
+
+  if (!fontsLoaded) {
+    return null;
+  }
 
   const handlePayment = async () => {
     const paymentAmount = parseFloat(amount);
@@ -111,215 +118,220 @@ const PaymentScreen = ({ route, navigation }) => {
   };
 
   return (
-    <KeyboardAvoidingView
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      style={styles.container}
-    >
-      <ScrollView contentContainerStyle={styles.scrollContent}>
-        <View style={styles.content}>
-          <Text style={styles.title}>Make Payment</Text>
+    <View style={styles.container}>
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        keyboardShouldPersistTaps="handled"
+        bounces={false}
+        showsVerticalScrollIndicator={false}
+      >
 
-          {/* Mechanic Info */}
-          <View style={styles.mechanicCard}>
-            <Text style={styles.mechanicLabel}>Paying to:</Text>
-            <Text style={styles.mechanicName}>{mechanicName}</Text>
-            {mechanicPhone && (
-              <Text style={styles.mechanicPhone}>📞 {mechanicPhone}</Text>
-            )}
-          </View>
 
-          {/* Amount Input */}
-          <View style={styles.inputContainer}>
-            <Text style={styles.inputLabel}>Amount (USD)</Text>
-            <View style={styles.amountInputWrapper}>
-              <Text style={styles.currencySymbol}>$</Text>
+        {/* Form Section */}
+        <View style={styles.formSection}>
+          <View style={styles.formContent}>
+            {/* Mechanic Info */}
+            <View style={styles.mechanicCard}>
+              <Text style={styles.mechanicLabel}>PAYING TO</Text>
+              <Text style={styles.mechanicName}>{mechanicName}</Text>
+              {mechanicPhone && (
+                <Text style={styles.mechanicPhone}>📞 {mechanicPhone}</Text>
+              )}
+            </View>
+
+            {/* Amount Input */}
+            <View style={styles.inputContainer}>
+              <Text style={styles.inputLabel}>AMOUNT (USD)</Text>
+              <View style={styles.amountInputWrapper}>
+                <Text style={styles.currencySymbol}>$</Text>
+                <TextInput
+                  style={styles.amountInput}
+                  placeholder="0.00"
+                  placeholderTextColor="#999"
+                  value={amount}
+                  onChangeText={setAmount}
+                  keyboardType="decimal-pad"
+                  editable={!loading}
+                />
+              </View>
+            </View>
+
+            {/* Description Input */}
+            <View style={styles.inputContainer}>
+              <Text style={styles.inputLabel}>DESCRIPTION (OPTIONAL)</Text>
               <TextInput
-                style={styles.amountInput}
-                placeholder="0.00"
-                value={amount}
-                onChangeText={setAmount}
-                keyboardType="decimal-pad"
+                style={styles.descriptionInput}
+                placeholder="What is this payment for?"
+                placeholderTextColor="#999"
+                value={description}
+                onChangeText={setDescription}
+                multiline
+                numberOfLines={3}
+                textAlignVertical="top"
                 editable={!loading}
               />
             </View>
-          </View>
 
-          {/* Description Input */}
-          <View style={styles.inputContainer}>
-            <Text style={styles.inputLabel}>Description (Optional)</Text>
-            <TextInput
-              style={styles.descriptionInput}
-              placeholder="What is this payment for?"
-              value={description}
-              onChangeText={setDescription}
-              multiline
-              numberOfLines={3}
-              textAlignVertical="top"
-              editable={!loading}
-            />
-          </View>
-
-          {/* Payment Info */}
-          <View style={styles.infoBox}>
-            <Text style={styles.infoTitle}>💳 Payment Method</Text>
-            <Text style={styles.infoText}>
-              This payment will be processed through PayPal. You'll be redirected to complete the payment securely.
-            </Text>
-          </View>
-
-          {/* Pay Button */}
-          <TouchableOpacity
-            style={[styles.payButton, loading && styles.buttonDisabled]}
-            onPress={handlePayment}
-            disabled={loading}
-          >
-            {loading ? (
-              <ActivityIndicator color="#fff" />
-            ) : (
-              <Text style={styles.payButtonText}>
-                Pay ${amount ? parseFloat(amount).toFixed(2) : '0.00'}
+            {/* Payment Info */}
+            <View style={styles.infoBox}>
+              <Text style={styles.infoText}>
+                💳 This payment will be processed through PayPal securely.
               </Text>
-            )}
-          </TouchableOpacity>
+            </View>
 
-          {/* Cancel Button */}
-          <TouchableOpacity
-            style={styles.cancelButton}
-            onPress={() => navigation.goBack()}
-            disabled={loading}
-          >
-            <Text style={styles.cancelButtonText}>Cancel</Text>
-          </TouchableOpacity>
+            {/* Pay Button */}
+            <TouchableOpacity
+              style={[styles.payButton, loading && styles.buttonDisabled]}
+              onPress={handlePayment}
+              disabled={loading}
+              activeOpacity={0.8}
+            >
+              {loading ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text style={styles.payButtonText}>
+                  pay ${amount ? parseFloat(amount).toFixed(2) : '0.00'}
+                </Text>
+              )}
+            </TouchableOpacity>
+
+            {/* Cancel Button */}
+            <TouchableOpacity
+              style={styles.cancelButton}
+              onPress={() => navigation.goBack()}
+              disabled={loading}
+            >
+              <Text style={styles.cancelButtonText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       </ScrollView>
-    </KeyboardAvoidingView>
+    </View>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: '#ffffff',
   },
   scrollContent: {
     flexGrow: 1,
   },
-  content: {
+
+  formSection: {
     flex: 1,
-    padding: 20,
-    paddingTop: 30,
+    backgroundColor: '#ffffff',
+    paddingHorizontal: 24,
+    paddingTop: 32,
+    paddingBottom: 32,
   },
-  title: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    textAlign: 'center',
-    marginBottom: 20,
-    color: '#333',
+  formContent: {
+    flex: 1,
   },
   mechanicCard: {
-    backgroundColor: '#fff',
-    padding: 20,
-    borderRadius: 15,
-    marginBottom: 20,
+    backgroundColor: '#f8f9fa',
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 24,
     borderLeftWidth: 4,
-    borderLeftColor: '#007AFF',
+    borderLeftColor: '#001f3f',
   },
   mechanicLabel: {
-    fontSize: 14,
-    color: '#666',
-    marginBottom: 5,
+    fontSize: 10,
+    fontWeight: '500',
+    color: '#555',
+    textTransform: 'uppercase',
+    marginBottom: 6,
+    letterSpacing: 0.5,
   },
   mechanicName: {
-    fontSize: 22,
+    fontSize: 16,
     fontWeight: 'bold',
-    color: '#007AFF',
-    marginBottom: 5,
+    color: '#001f3f',
+    marginBottom: 6,
   },
   mechanicPhone: {
-    fontSize: 14,
-    color: '#666',
+    fontSize: 12,
+    color: '#6b7280',
   },
   inputContainer: {
-    marginBottom: 20,
+    marginBottom: 24,
   },
   inputLabel: {
-    fontSize: 16,
-    fontWeight: '600',
-    marginBottom: 8,
-    color: '#333',
+    fontSize: 10,
+    fontWeight: '500',
+    color: '#555',
+    textTransform: 'uppercase',
+    marginBottom: 6,
+    letterSpacing: 0.5,
   },
   amountInputWrapper: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#fff',
-    borderRadius: 10,
-    borderWidth: 2,
-    borderColor: '#4CAF50',
-    paddingHorizontal: 15,
+    borderBottomWidth: 1,
+    borderBottomColor: '#ccc',
   },
   currencySymbol: {
-    fontSize: 24,
+    fontSize: 20,
     fontWeight: 'bold',
-    color: '#4CAF50',
-    marginRight: 5,
+    color: '#001f3f',
+    marginRight: 8,
   },
   amountInput: {
     flex: 1,
-    fontSize: 24,
+    fontSize: 20,
     fontWeight: 'bold',
     color: '#333',
-    paddingVertical: 15,
+    paddingVertical: 8,
+    paddingHorizontal: 0,
   },
   descriptionInput: {
-    backgroundColor: '#fff',
-    padding: 15,
-    borderRadius: 10,
-    fontSize: 16,
-    minHeight: 80,
-    borderWidth: 1,
-    borderColor: '#ddd',
+    width: '100%',
+    paddingVertical: 10,
+    paddingHorizontal: 0,
+    borderBottomWidth: 1,
+    borderBottomColor: '#ccc',
+    fontSize: 14,
+    color: '#333',
+    minHeight: 50,
   },
   infoBox: {
-    backgroundColor: '#E3F2FD',
-    padding: 15,
+    backgroundColor: '#f0f9ff',
+    padding: 12,
     borderRadius: 10,
-    marginBottom: 20,
+    marginBottom: 24,
     borderLeftWidth: 4,
-    borderLeftColor: '#2196F3',
-  },
-  infoTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#1976D2',
-    marginBottom: 5,
+    borderLeftColor: '#0ea5e9',
   },
   infoText: {
-    fontSize: 14,
-    color: '#1565C0',
-    lineHeight: 20,
+    fontSize: 12,
+    color: '#0369a1',
+    lineHeight: 18,
   },
   payButton: {
-    backgroundColor: '#4CAF50',
-    padding: 18,
-    borderRadius: 10,
+    backgroundColor: '#001f3f',
+    height: 48,
+    borderRadius: 24,
     alignItems: 'center',
-    marginBottom: 15,
+    justifyContent: 'center',
+    marginBottom: 12,
   },
   buttonDisabled: {
     backgroundColor: '#999',
   },
   payButtonText: {
-    color: '#fff',
-    fontSize: 20,
-    fontWeight: 'bold',
+    color: '#ffffff',
+    fontSize: 16,
+    fontWeight: '600',
   },
   cancelButton: {
-    padding: 16,
     alignItems: 'center',
+    padding: 16,
   },
   cancelButtonText: {
-    color: '#666',
-    fontSize: 16,
+    fontSize: 12,
+    color: '#6b7280',
   },
 });
 

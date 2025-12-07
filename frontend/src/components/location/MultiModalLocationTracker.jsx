@@ -1,20 +1,12 @@
 import NetInfo from "@react-native-community/netinfo";
 import * as Location from "expo-location";
 import { Accelerometer, Gyroscope, Magnetometer } from "expo-sensors";
-import * as SQLite from "expo-sqlite";
-import { useEffect, useRef, useState } from "react";
-import {
-  ActivityIndicator,
-  Alert,
-  Platform,
-  StyleSheet,
-  Text,
-  View
-} from "react-native";
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
+import { Alert, Platform } from "react-native";
 import { BleManager } from "react-native-ble-plx";
 import WifiManager from "react-native-wifi-reborn";
 import authService from "../../screens/authService";
-
+import dbManager from "../../utils/database";
 class KalmanFilter {
   constructor(
     processNoise = 0.001,
@@ -80,11 +72,12 @@ const WIFI_TX_POWER = -40; // Typical WiFi transmit power (dBm)
 const BLE_TX_POWER = -59; // Typical BLE transmit power (dBm)
 const PATH_LOSS_EXPONENT = 2.0; // Free space = 2.0, indoor = 2.5-4.0
 
-const MultiModalLocationTracker = ({ onLocationUpdate, onLandmarksUpdate, onMechanicUpdate }) => {
+const MultiModalLocationTracker = forwardRef(({ onLocationUpdate, onLandmarksUpdate, onMechanicUpdate }, ref) => {
   const [currentLocation, setCurrentLocation] = useState({
     latitude: null,
     longitude: null,
     accuracy: null,
+    address: null,
   });
   const [networkStatus, setNetworkStatus] = useState({
     isConnected: false,
@@ -101,6 +94,8 @@ const MultiModalLocationTracker = ({ onLocationUpdate, onLandmarksUpdate, onMech
   const [unsyncedCount, setUnsyncedCount] = useState(0);
   const [user, setUser] = useState(null);
   const [initStatus, setInitStatus] = useState('Initializing...');
+  const [showAddressFeedback, setShowAddressFeedback] = useState(false);
+  const [addressFeedbackGiven, setAddressFeedbackGiven] = useState(false);
 
   const kalmanLat = useRef(new KalmanFilter(0.001, 0.01, null));
   const kalmanLng = useRef(new KalmanFilter(0.001, 0.01, null));
@@ -135,6 +130,9 @@ const MultiModalLocationTracker = ({ onLocationUpdate, onLandmarksUpdate, onMech
     wifiScan: null,
   });
 
+  // Cache for reverse geocoding to avoid excessive API calls
+  const lastGeocodedLocation = useRef({ lat: null, lng: null, address: null });
+
   // ---------- Token Management ----------
   const getToken = async () => {
     try {
@@ -145,94 +143,253 @@ const MultiModalLocationTracker = ({ onLocationUpdate, onLandmarksUpdate, onMech
     }
   };
 
-  // ---------- Database Functions ----------
-  const openDatabase = () => {
-    return SQLite.openDatabase("locationtracker.db");
+  // ---------- Reverse Geocoding ----------
+  const reverseGeocode = async (latitude, longitude) => {
+    try {
+      // First, check if we have a verified address for this location
+      const verifiedAddress = await checkVerifiedAddress(latitude, longitude);
+      if (verifiedAddress) {
+        setShowAddressFeedback(false); // Don't show feedback for verified addresses
+        return verifiedAddress;
+      }
+
+      // Only geocode if location has changed significantly (>50 meters)
+      const lastLat = lastGeocodedLocation.current.lat;
+      const lastLng = lastGeocodedLocation.current.lng;
+
+      if (lastLat && lastLng) {
+        const distance = getDistanceInMeters(lastLat, lastLng, latitude, longitude);
+        if (distance < 50 && lastGeocodedLocation.current.address) {
+          return lastGeocodedLocation.current.address;
+        }
+      }
+
+      // Perform reverse geocoding
+      const result = await Location.reverseGeocodeAsync({
+        latitude,
+        longitude,
+      });
+
+      if (result && result.length > 0) {
+        const location = result[0];
+        // Build address string from available components
+        const addressParts = [];
+
+        if (location.name) addressParts.push(location.name);
+        if (location.street) addressParts.push(location.street);
+        if (location.city) addressParts.push(location.city);
+        if (location.region) addressParts.push(location.region);
+        if (location.country) addressParts.push(location.country);
+
+        const address = addressParts.join(', ') || 'Address unavailable';
+
+        // Cache the result
+        lastGeocodedLocation.current = {
+          lat: latitude,
+          lng: longitude,
+          address,
+        };
+
+        // Show feedback UI for newly geocoded addresses (if not already given feedback)
+        if (!addressFeedbackGiven && address !== 'Address unavailable') {
+          setShowAddressFeedback(true);
+          // Auto-hide after 10 seconds
+          setTimeout(() => {
+            setShowAddressFeedback(false);
+          }, 10000);
+        }
+
+        return address;
+      }
+
+      return 'Address unavailable';
+    } catch (error) {
+      console.error('Reverse geocoding error:', error);
+      return 'Address unavailable';
+    }
   };
 
-  const execSqlAsync = (sql, params = []) => {
-    return new Promise((resolve, reject) => {
-      if (!db.current) return resolve(null);
-      db.current.transaction(
-        (tx) => {
-          tx.executeSql(
-            sql,
-            params,
-            (_, result) => resolve(result),
-            (_, err) => {
-              reject(err);
-              return false;
-            }
-          );
-        },
-        (txErr) => reject(txErr)
+  // ---------- Verified Address Functions ----------
+
+  /**
+   * Check if a verified address exists for nearby coordinates
+   * @param {number} latitude
+   * @param {number} longitude
+   * @returns {Promise<string|null>} Verified address or null
+   */
+  const checkVerifiedAddress = async (latitude, longitude) => {
+    if (!db.current) return null;
+
+    try {
+      // Search within ~50m radius
+      const radiusKm = 0.05; // 50 meters
+      const latDelta = radiusKm / 111.32;
+      const lngDelta = radiusKm / (111.32 * Math.cos(latitude * Math.PI / 180));
+
+      const results = await db.current.getAllAsync(
+        `SELECT * FROM verified_addresses
+         WHERE latitude BETWEEN ? AND ?
+         AND longitude BETWEEN ? AND ?
+         ORDER BY verified_count DESC, last_verified DESC
+         LIMIT 1;`,
+        [
+          latitude - latDelta,
+          latitude + latDelta,
+          longitude - lngDelta,
+          longitude + lngDelta
+        ]
       );
-    });
+
+      if (results && results.length > 0) {
+        const verified = results[0];
+
+        // Calculate actual distance to ensure it's within 50m
+        const distance = getDistanceInMeters(
+          latitude,
+          longitude,
+          verified.latitude,
+          verified.longitude
+        );
+
+        if (distance <= 50) {
+          console.log(`✅ Using verified address (${distance.toFixed(0)}m away, verified ${verified.verified_count}x)`);
+          return verified.address;
+        }
+      }
+
+      return null;
+    } catch (error) {
+      console.error('Error checking verified address:', error);
+      return null;
+    }
   };
 
+  /**
+   * Save a user-verified address to the cache
+   * @param {number} latitude
+   * @param {number} longitude
+   * @param {string} address
+   */
+  const saveVerifiedAddress = async (latitude, longitude, address) => {
+    if (!db.current || !address) return;
 
+    try {
+      const now = Date.now();
+
+      // Check if a very similar address already exists nearby
+      const existing = await db.current.getAllAsync(
+        `SELECT * FROM verified_addresses
+         WHERE address = ?
+         AND ABS(latitude - ?) < 0.0005
+         AND ABS(longitude - ?) < 0.0005
+         LIMIT 1;`,
+        [address, latitude, longitude]
+      );
+
+      if (existing && existing.length > 0) {
+        // Increment existing verification
+        await incrementVerificationCount(existing[0].id);
+      } else {
+        // Insert new verified address
+        await db.current.runAsync(
+          `INSERT INTO verified_addresses
+           (latitude, longitude, address, verified_count, last_verified, created_at)
+           VALUES (?, ?, ?, 1, ?, ?);`,
+          [latitude, longitude, address, now, now]
+        );
+        console.log('✅ Saved verified address:', address);
+      }
+    } catch (error) {
+      console.error('Error saving verified address:', error);
+    }
+  };
+
+  /**
+   * Increment verification count for an existing verified address
+   * @param {number} id
+   */
+  const incrementVerificationCount = async (id) => {
+    if (!db.current) return;
+
+    try {
+      const now = Date.now();
+      await db.current.runAsync(
+        `UPDATE verified_addresses
+         SET verified_count = verified_count + 1, last_verified = ?
+         WHERE id = ?;`,
+        [now, id]
+      );
+      console.log('✅ Incremented verification count');
+    } catch (error) {
+      console.error('Error incrementing verification count:', error);
+    }
+  };
+
+  /**
+   * Handle user confirming address is correct
+   */
+  const handleAddressCorrect = async () => {
+    if (currentLocation?.latitude && currentLocation?.longitude && currentLocation?.address) {
+      await saveVerifiedAddress(
+        currentLocation.latitude,
+        currentLocation.longitude,
+        currentLocation.address
+      );
+      setShowAddressFeedback(false);
+      setAddressFeedbackGiven(true);
+    }
+  };
+
+  /**
+   * Handle user indicating address is incorrect
+   */
+  const handleAddressIncorrect = () => {
+    setShowAddressFeedback(false);
+    setAddressFeedbackGiven(true);
+    // Future: Could open a dialog to let user correct the address
+  };
+
+  // Helper function to calculate distance between two coordinates
+  const getDistanceInMeters = (lat1, lon1, lat2, lon2) => {
+    const R = 6371e3; // Earth's radius in meters
+    const φ1 = (lat1 * Math.PI) / 180;
+    const φ2 = (lat2 * Math.PI) / 180;
+    const Δφ = ((lat2 - lat1) * Math.PI) / 180;
+    const Δλ = ((lon2 - lon1) * Math.PI) / 180;
+
+    const a =
+      Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+      Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+    return R * c;
+  };
+
+  // ---------- Database Functions ----------
   const initializeDatabase = async () => {
     try {
-      db.current = openDatabase();
-      await execSqlAsync(`CREATE TABLE IF NOT EXISTS locations (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      latitude REAL NOT NULL,
-      longitude REAL NOT NULL,
-      accuracy REAL,
-      timestamp INTEGER NOT NULL,
-      synced INTEGER DEFAULT 0,
-      sources TEXT
-    );`);
-      await execSqlAsync(
-        "CREATE INDEX IF NOT EXISTS idx_synced ON locations(synced);"
-      );
+      console.log('🗄️ MultiModalLocationTracker: Getting database connection...');
+      const database = await dbManager.getDatabase();
+      db.current = database;
 
-      // NEW: Initialize landmarks and mechanics tables
-      await initializeLandmarksTable();
-      await initializeMechanicsTable();
+      // Create locations table (landmarks and mechanics tables are created by dbManager)
+      await database.execAsync(`
+        CREATE TABLE IF NOT EXISTS locations (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          latitude REAL NOT NULL,
+          longitude REAL NOT NULL,
+          accuracy REAL,
+          timestamp INTEGER NOT NULL,
+          synced INTEGER DEFAULT 0,
+          sources TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_synced ON locations(synced);
+      `);
 
       await updateUnsyncedCount();
+      console.log('✅ MultiModalLocationTracker: Database initialized');
     } catch (error) {
       console.error("Database initialization error:", error);
-    }
-  };
-
-
-  const initializeLandmarksTable = async () => {
-    try {
-      await execSqlAsync(`CREATE TABLE IF NOT EXISTS landmarks (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      description TEXT,
-      category TEXT,
-      latitude REAL NOT NULL,
-      longitude REAL NOT NULL,
-      timestamp INTEGER NOT NULL,
-      synced INTEGER DEFAULT 1
-    );`);
-      await execSqlAsync("CREATE INDEX IF NOT EXISTS idx_landmarks_location ON landmarks(latitude, longitude);");
-    } catch (error) {
-      console.error("Landmarks table initialization error:", error);
-    }
-  };
-
-  const initializeMechanicsTable = async () => {
-    try {
-      await execSqlAsync(`CREATE TABLE IF NOT EXISTS mechanics (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      phone TEXT,
-      latitude REAL NOT NULL,
-      longitude REAL NOT NULL,
-      specialties TEXT,
-      rating REAL,
-      available INTEGER,
-      timestamp INTEGER NOT NULL,
-      synced INTEGER DEFAULT 1
-    );`);
-      await execSqlAsync("CREATE INDEX IF NOT EXISTS idx_mechanics_location ON mechanics(latitude, longitude);");
-    } catch (error) {
-      console.error("Mechanics table initialization error:", error);
     }
   };
 
@@ -248,7 +405,7 @@ const MultiModalLocationTracker = ({ onLocationUpdate, onLandmarksUpdate, onMech
         if (!id || !lat || !lng) continue;
 
         // Upsert landmark
-        await execSqlAsync(
+        await db.current.runAsync(
           `INSERT OR REPLACE INTO landmarks
         (id, name, description, category, latitude, longitude, timestamp, synced)
         VALUES (?, ?, ?, ?, ?, ?, ?, 1);`,
@@ -276,7 +433,7 @@ const MultiModalLocationTracker = ({ onLocationUpdate, onLandmarksUpdate, onMech
       const latDelta = radiusKm / 111.32; // ~111.32 km per degree latitude
       const lngDelta = radiusKm / (111.32 * Math.cos(latitude * Math.PI / 180));
 
-      const res = await execSqlAsync(
+      const res = await db.current.getAllAsync(
         `SELECT * FROM landmarks
        WHERE latitude BETWEEN ? AND ?
        AND longitude BETWEEN ? AND ?
@@ -289,7 +446,7 @@ const MultiModalLocationTracker = ({ onLocationUpdate, onLandmarksUpdate, onMech
         ]
       );
 
-      return res?.rows?._array || [];
+      return res || [];
     } catch (error) {
       console.error("Error getting cached landmarks:", error);
       return [];
@@ -308,7 +465,7 @@ const MultiModalLocationTracker = ({ onLocationUpdate, onLandmarksUpdate, onMech
 
         if (!id || !lat || !lng) continue;
 
-        await execSqlAsync(
+        await db.current.runAsync(
           `INSERT OR REPLACE INTO mechanics
         (id, name, phone, latitude, longitude, specialties, rating, available, timestamp, synced)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1);`,
@@ -337,7 +494,7 @@ const MultiModalLocationTracker = ({ onLocationUpdate, onLandmarksUpdate, onMech
       const latDelta = radiusKm / 111.32;
       const lngDelta = radiusKm / (111.32 * Math.cos(latitude * Math.PI / 180));
 
-      const res = await execSqlAsync(
+      const res = await db.current.getAllAsync(
         `SELECT * FROM mechanics
        WHERE latitude BETWEEN ? AND ?
        AND longitude BETWEEN ? AND ?
@@ -350,7 +507,7 @@ const MultiModalLocationTracker = ({ onLocationUpdate, onLandmarksUpdate, onMech
         ]
       );
 
-      const mechanics = res?.rows?._array || [];
+      const mechanics = res || [];
 
       // Parse specialties JSON
       return mechanics.map(m => ({
@@ -416,7 +573,7 @@ const MultiModalLocationTracker = ({ onLocationUpdate, onLandmarksUpdate, onMech
     try {
       const sources = JSON.stringify(locationSources || {});
       const ts = Date.now();
-      await execSqlAsync(
+      await db.current.runAsync(
         "INSERT INTO locations (latitude, longitude, accuracy, timestamp, synced, sources) VALUES (?, ?, ?, ?, 0, ?);",
         [
           location.latitude,
@@ -435,12 +592,10 @@ const MultiModalLocationTracker = ({ onLocationUpdate, onLandmarksUpdate, onMech
   const updateUnsyncedCount = async () => {
     if (!db.current) return;
     try {
-      const res = await execSqlAsync(
+      const res = await db.current.getAllAsync(
         "SELECT COUNT(*) as c FROM locations WHERE synced = 0;"
       );
-      const count = res?.rows?.item
-        ? res.rows.item(0).c
-        : res?.rows?._array?.length || 0;
+      const count = res?.[0]?.c || 0;
       setUnsyncedCount(count || 0);
     } catch (error) {
       console.error("Error counting unsynced rows:", error);
@@ -448,17 +603,17 @@ const MultiModalLocationTracker = ({ onLocationUpdate, onLandmarksUpdate, onMech
   };
 
   const fetchUnsyncedBatch = async (limit = 50) => {
-    const res = await execSqlAsync(
+    const res = await db.current.getAllAsync(
       "SELECT * FROM locations WHERE synced = 0 ORDER BY timestamp ASC LIMIT ?;",
       [limit]
     );
-    return res?.rows?._array || [];
+    return res || [];
   };
 
   const markRowsSynced = async (ids = []) => {
     if (!ids.length) return;
     const placeholders = ids.map(() => "?").join(",");
-    await execSqlAsync(
+    await db.current.runAsync(
       `UPDATE locations SET synced = 1 WHERE id IN (${placeholders});`,
       ids
     );
@@ -543,6 +698,13 @@ const MultiModalLocationTracker = ({ onLocationUpdate, onLandmarksUpdate, onMech
     loadUser();
   }, []);
 
+  // Reset feedback state when location changes significantly
+  useEffect(() => {
+    if (currentLocation?.latitude && currentLocation?.longitude) {
+      setAddressFeedbackGiven(false);
+    }
+  }, [currentLocation?.latitude, currentLocation?.longitude]);
+
   // ---------- Lifecycle ----------
   useEffect(() => {
     initializeDatabase();
@@ -572,10 +734,14 @@ const MultiModalLocationTracker = ({ onLocationUpdate, onLandmarksUpdate, onMech
           kalmanLng.current.reset(longitude);
           sensorData.current.lastPosition = { lat: latitude, lng: longitude };
 
+          // Get initial address
+          const address = await reverseGeocode(latitude, longitude);
+
           setCurrentLocation({
             latitude,
             longitude,
             accuracy: accuracy || 100,
+            address,
           });
 
           setInitStatus('GPS acquired. Tracking active.');
@@ -972,6 +1138,14 @@ const MultiModalLocationTracker = ({ onLocationUpdate, onLandmarksUpdate, onMech
           : primarySource.accuracy,
     };
 
+    // Get address asynchronously (don't block location update)
+    reverseGeocode(filteredLat, filteredLng).then((address) => {
+      setCurrentLocation((prev) => ({
+        ...prev,
+        address,
+      }));
+    });
+
     setCurrentLocation(fusedLocation);
     sensorData.current.lastPosition = { lat: filteredLat, lng: filteredLng };
     saveLocationLocally(fusedLocation);
@@ -1002,120 +1176,20 @@ const MultiModalLocationTracker = ({ onLocationUpdate, onLandmarksUpdate, onMech
     }
   };
 
-  // ---------- UI Helper Functions ----------
-  const getActiveSourcesCount = () =>
-    Object.values(locationSources).filter(
-      (s) => s?.timestamp > Date.now() - SOURCE_TIMEOUT_MS
-    ).length;
 
-  const getSourceStatus = (source) =>
-    source?.timestamp > Date.now() - SOURCE_TIMEOUT_MS ? "Ã¢Å“â€œ" : "Ã¢Å“â€”";
+  // Expose state and handlers to parent via ref
+  useImperativeHandle(ref, () => ({
+    currentLocation,
+    networkStatus,
+    locationSources,
+    showAddressFeedback,
+    handleAddressCorrect,
+    handleAddressIncorrect,
+  }));
 
   // ---------- Render ----------
-  // Replace the entire return statement (around line 250+) with this:
-return (
-  <View style={styles.container}>
-    {(!currentLocation?.latitude || !currentLocation?.longitude) && (
-      <View style={[styles.card, styles.statusCard]}>
-        <Text style={styles.statusTitle}>📍 {initStatus}</Text>
-        <ActivityIndicator size="small" color="#007AFF" />
-      </View>
-    )}
-
-    <Text style={styles.title}>📍 Current Location</Text>
-
-    {user && (
-      <View style={styles.userCard}>
-        <Text style={styles.userName}>👤 {user.username}</Text>
-        <Text style={styles.userRole}>Role: {user.role}</Text>
-      </View>
-    )}
-
-    <View style={styles.card}>
-      <Text style={styles.locationText}>
-        📍 {currentLocation.address || 'Acquiring location...'}
-      </Text>
-      <Text style={styles.coordsText}>
-        Lat: {currentLocation.latitude?.toFixed(6) || 'N/A'}, Lng: {currentLocation.longitude?.toFixed(6) || 'N/A'}
-      </Text>
-      <Text style={styles.accuracyText}>
-        🎯 Accuracy: {currentLocation.accuracy ? `±${currentLocation.accuracy.toFixed(0)}m` : 'No fix'}
-      </Text>
-      <Text style={styles.networkText}>
-        {networkStatus.isConnected ? '🟢 Online' : '🔴 Offline'} ({networkStatus.type})
-      </Text>
-    </View>
-  </View>
-);
-};
-
-const styles = StyleSheet.create({
-  container: {
-    backgroundColor: '#fff',
-    padding: 15,
-    borderRadius: 10,
-    marginBottom: 15,
-  },
-  card: {
-    backgroundColor: '#f9f9f9',
-    padding: 15,
-    borderRadius: 10,
-    marginBottom: 10,
-  },
-  statusCard: {
-    backgroundColor: '#FFF9E6',
-    borderColor: '#FFD700',
-    borderWidth: 1,
-    alignItems: 'center',
-  },
-  statusTitle: {
-    fontSize: 16,
-    fontWeight: "600",
-    marginBottom: 10,
-    color: "#333",
-  },
-  title: {
-    fontSize: 18,
-    fontWeight: '600',
-    marginBottom: 15,
-    color: '#333',
-  },
-  userCard: {
-    backgroundColor: '#E3F2FD',
-    padding: 12,
-    borderRadius: 8,
-    marginBottom: 10,
-  },
-  userName: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#007AFF',
-    marginBottom: 4,
-  },
-  userRole: {
-    fontSize: 14,
-    color: '#666',
-  },
-  locationText: {
-    fontSize: 16,
-    color: '#333',
-    marginBottom: 6,
-    fontWeight: '500',
-  },
-  coordsText: {
-    fontSize: 14,
-    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
-    color: '#666',
-    marginBottom: 6,
-  },
-  accuracyText: {
-    fontSize: 14,
-    color: '#666',
-    marginBottom: 4,
-  },
-  networkText: {
-    fontSize: 14,
-    color: '#666',
-  },
+  // Headless component - no UI rendering
+  return null;
 });
+
 export default MultiModalLocationTracker;

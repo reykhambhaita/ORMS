@@ -1,6 +1,7 @@
 // src/components/map/OfflineMapView.jsx
+import { Ionicons } from '@expo/vector-icons';
 import * as MapLibreGL from '@maplibre/maplibre-react-native';
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
 MapLibreGL.setConnected(true);
 
@@ -13,12 +14,7 @@ const OfflineMapView = ({ currentLocation, landmarks = [], mechanics = [] }) => 
     <View style={styles.container}>
       <MapLibreGL.MapView
         style={styles.map}
-
-
         mapStyle={require('../../../assets/maps/streets-v4-style.json')}
-
-
-
         compassEnabled={true}
         logoEnabled={false}
         scaleBarEnabled={true}
@@ -64,7 +60,7 @@ const OfflineMapView = ({ currentLocation, landmarks = [], mechanics = [] }) => 
               anchor={{ x: 0.5, y: 1 }}
             >
               <View style={styles.landmarkMarker}>
-                <Text style={styles.markerEmoji}>📍</Text>
+                <Ionicons name="location" size={18} color="#001f3f" />
               </View>
             </MapLibreGL.PointAnnotation>
           );
@@ -86,7 +82,7 @@ const OfflineMapView = ({ currentLocation, landmarks = [], mechanics = [] }) => 
               anchor={{ x: 0.5, y: 1 }}
             >
               <View style={styles.mechanicMarker}>
-                <Text style={styles.markerEmoji}>🔧</Text>
+                <Ionicons name="construct" size={18} color="#FF6B35" />
               </View>
             </MapLibreGL.PointAnnotation>
           );
@@ -99,28 +95,28 @@ const OfflineMapView = ({ currentLocation, landmarks = [], mechanics = [] }) => 
 const styles = StyleSheet.create({
   container: {
     height: 400,
-    borderRadius: 10,
+    borderRadius: 16,
     overflow: 'hidden',
-    marginBottom: 15,
+    marginBottom: 16,
   },
   map: {
     flex: 1,
   },
   userMarker: {
-    width: 20,
-    height: 20,
-    borderRadius: 20,
-    backgroundColor: 'rgba(0, 122, 255, 0.2)',
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: 'rgba(0, 31, 63, 0.2)',
     justifyContent: 'center',
     alignItems: 'center',
     position: 'relative',
   },
   userMarkerInner: {
-    width: 6,
-    height: 6,
-    borderRadius: 8,
-    backgroundColor: '#007AFF',
-    borderWidth: 3,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#001f3f',
+    borderWidth: 2,
     borderColor: '#fff',
     zIndex: 2,
   },
@@ -129,35 +125,32 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: 'rgba(0, 122, 255, 0.3)',
+    backgroundColor: 'rgba(0, 31, 63, 0.3)',
     zIndex: 1,
   },
   landmarkMarker: {
-    backgroundColor: '#fff',
+    backgroundColor: '#ffffff',
     borderRadius: 20,
-    padding: 4,
+    padding: 6,
     borderWidth: 2,
-    borderColor: '#7EBC89',
+    borderColor: '#001f3f',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 3,
-    elevation: 5,
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
+    elevation: 3,
   },
   mechanicMarker: {
-    backgroundColor: '#fff',
+    backgroundColor: '#ffffff',
     borderRadius: 20,
-    padding: 4,
+    padding: 6,
     borderWidth: 2,
     borderColor: '#FF6B35',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 3,
-    elevation: 5,
-  },
-  markerEmoji: {
-    fontSize: 12,
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
+    elevation: 3,
   },
 });
 

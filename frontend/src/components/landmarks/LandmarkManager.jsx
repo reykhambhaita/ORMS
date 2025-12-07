@@ -1,79 +1,110 @@
 // src/components/landmarks/LandmarkManager.jsx
+import { Ionicons } from '@expo/vector-icons';
 import NetInfo from "@react-native-community/netinfo";
-import * as SQLite from 'expo-sqlite';
 import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Dimensions,
   Modal,
   ScrollView,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
-  View,
+  View
 } from 'react-native';
+import { Gesture } from 'react-native-gesture-handler';
+import {
+  runOnJS,
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring
+} from 'react-native-reanimated';
 import authService from '../../screens/authService';
+import dbManager from '../../utils/database';
 
 const CATEGORIES = [
-  { value: 'restaurant', label: '🍽️ Restaurant', emoji: '🍽️' },
-  { value: 'gas_station', label: '⛽ Gas Station', emoji: '⛽' },
-  { value: 'hospital', label: '🏥 Hospital', emoji: '🏥' },
-  { value: 'parking', label: '🅿️ Parking', emoji: '🅿️' },
-  { value: 'landmark', label: '🗿 Landmark', emoji: '🗿' },
-  { value: 'shop', label: '🛒 Shop', emoji: '🛒' },
-  { value: 'other', label: '📍 Other', emoji: '📍' },
+  { value: 'restaurant', label: 'Restaurant' },
+  { value: 'gas_station', label: 'Gas Station' },
+  { value: 'hospital', label: 'Hospital' },
+  { value: 'parking', label: 'Parking' },
+  { value: 'landmark', label: 'Landmark' },
+  { value: 'shop', label: 'Shop' },
+  { value: 'other', label: 'Other' },
 ];
 
-const LandmarkManager = ({ currentLocation, onLandmarksUpdate }) => {
-  const [modalVisible, setModalVisible] = useState(false);
+const LandmarkManager = ({ currentLocation, onLandmarksUpdate, onLandmarkClick }) => {
+  const [listModalVisible, setListModalVisible] = useState(false);
+  const [addModalVisible, setAddModalVisible] = useState(false);
   const [loading, setLoading] = useState(false);
   const [currentUserId, setCurrentUserId] = useState(null);
   const [isOnline, setIsOnline] = useState(true);
+  const [previousOnlineState, setPreviousOnlineState] = useState(true);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [syncing, setSyncing] = useState(false);
 
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [category, setCategory] = useState('other');
+  const [categoryDropdownVisible, setCategoryDropdownVisible] = useState(false);
   const [nearbyLandmarks, setNearbyLandmarks] = useState([]);
+  const [dbReady, setDbReady] = useState(false);
 
-  // FIX: Use the synchronous API for consistency
-  const [db, setDb] = useState(null);
+  // Drag gesture state
+  const translateY = useSharedValue(0);
+  const context = useSharedValue({ y: 0 });
+  const SCREEN_HEIGHT = Dimensions.get('window').height;
 
-  // Monitor network status
+  // Monitor network status and trigger sync when coming online
   useEffect(() => {
     const unsubscribe = NetInfo.addEventListener((state) => {
-      setIsOnline(!!state.isConnected);
+      const online = !!state.isConnected;
+      setIsOnline(online);
+
+      // If we just came online (transition from offline to online), sync pending changes
+      if (online && !previousOnlineState && dbReady) {
+        console.log('Network restored, syncing pending changes...');
+        syncAllPendingChanges();
+      }
+
+      setPreviousOnlineState(online);
     });
 
     return () => unsubscribe();
-  }, []);
+  }, [previousOnlineState, dbReady]);
 
+  // Initialize database on mount
   useEffect(() => {
-    try {
-      const database = SQLite.openDatabaseSync('locationtracker.db');
+    let mounted = true;
 
-      // CREATE TABLE IF NOT EXISTS - this fixes the error
-      database.execSync(`
-        CREATE TABLE IF NOT EXISTS landmarks (
-          id TEXT PRIMARY KEY,
-          name TEXT NOT NULL,
-          description TEXT,
-          category TEXT,
-          latitude REAL NOT NULL,
-          longitude REAL NOT NULL,
-          timestamp INTEGER NOT NULL,
-          synced INTEGER DEFAULT 1
-        );
-        CREATE INDEX IF NOT EXISTS idx_landmarks_location ON landmarks(latitude, longitude);
-      `);
+    const initDb = async () => {
+      try {
+        console.log('LandmarkManager: Getting database connection...');
+        await dbManager.getDatabase();
 
-      setDb(database);
-    } catch (error) {
-      console.error('Failed to open database:', error);
-    }
+        if (mounted) {
+          console.log('LandmarkManager: Database ready');
+          setDbReady(true);
+        }
+      } catch (error) {
+        console.error('LandmarkManager: Database initialization error:', error);
+        if (mounted) {
+          Alert.alert(
+            'Database Error',
+            'Failed to initialize database. Please restart the app.\n\nError: ' + error.message
+          );
+          setDbReady(false);
+        }
+      }
+    };
+
+    initDb();
+
+    return () => {
+      mounted = false;
+    };
   }, []);
-
-
 
   // Get current user ID
   useEffect(() => {
@@ -88,24 +119,31 @@ const LandmarkManager = ({ currentLocation, onLandmarksUpdate }) => {
 
   // Auto-load landmarks
   useEffect(() => {
-    if (currentLocation?.latitude && currentLocation?.longitude && db) {
+    if (currentLocation?.latitude && currentLocation?.longitude && dbReady) {
       loadLandmarks();
     }
-  }, [currentLocation?.latitude, currentLocation?.longitude, db]);
+  }, [currentLocation?.latitude, currentLocation?.longitude, dbReady]);
 
   const loadLandmarks = async () => {
-    if (!currentLocation?.latitude || !currentLocation?.longitude || !db) return;
+    if (!currentLocation?.latitude || !currentLocation?.longitude) {
+      console.log('Cannot load landmarks: missing location');
+      return;
+    }
 
     setLoading(true);
 
     try {
+      const db = await dbManager.getDatabase();
+
       // First, load from cache
-      const cached = getCachedLandmarks(
+      const cached = await getCachedLandmarks(
         currentLocation.latitude,
-        currentLocation.longitude
+        currentLocation.longitude,
+        db
       );
 
       if (cached.length > 0) {
+        console.log(`Loaded ${cached.length} cached landmarks`);
         setNearbyLandmarks(cached);
         if (onLandmarksUpdate) {
           onLandmarksUpdate(cached);
@@ -121,7 +159,8 @@ const LandmarkManager = ({ currentLocation, onLandmarksUpdate }) => {
         );
 
         if (result.success && result.data) {
-          cacheLandmarks(result.data);
+          console.log(`Loaded ${result.data.length} landmarks from server`);
+          await cacheLandmarks(result.data, db);
           setNearbyLandmarks(result.data);
           if (onLandmarksUpdate) {
             onLandmarksUpdate(result.data);
@@ -131,27 +170,38 @@ const LandmarkManager = ({ currentLocation, onLandmarksUpdate }) => {
     } catch (error) {
       console.error('Load landmarks error:', error);
       // Use cached data on error
-      const cached = getCachedLandmarks(
-        currentLocation.latitude,
-        currentLocation.longitude
-      );
-      setNearbyLandmarks(cached);
-      if (onLandmarksUpdate) {
-        onLandmarksUpdate(cached);
+      try {
+        const db = await dbManager.getDatabase();
+        const cached = await getCachedLandmarks(
+          currentLocation.latitude,
+          currentLocation.longitude,
+          db
+        );
+        setNearbyLandmarks(cached);
+        if (onLandmarksUpdate) {
+          onLandmarksUpdate(cached);
+        }
+      } catch (cacheError) {
+        console.error('Cache read error:', cacheError);
       }
     } finally {
       setLoading(false);
     }
   };
 
-  const getCachedLandmarks = (latitude, longitude) => {
-    if (!db) return [];
-
+  const getCachedLandmarks = async (latitude, longitude, db = null) => {
     try {
+      const database = db || await dbManager.getDatabase();
+
+      if (!database) {
+        console.warn('Database not available for reading');
+        return [];
+      }
+
       const latDelta = 10 / 111.32;
       const lngDelta = 10 / (111.32 * Math.cos(latitude * Math.PI / 180));
 
-      const result = db.getAllSync(
+      const result = await database.getAllAsync(
         `SELECT * FROM landmarks
          WHERE latitude BETWEEN ? AND ?
          AND longitude BETWEEN ? AND ?
@@ -171,25 +221,38 @@ const LandmarkManager = ({ currentLocation, onLandmarksUpdate }) => {
     }
   };
 
-  const cacheLandmarks = (landmarks) => {
-    if (!db || !landmarks || landmarks.length === 0) return;
+  const cacheLandmarks = async (landmarks, db = null) => {
+    if (!landmarks || landmarks.length === 0) {
+      return;
+    }
 
     try {
-      const now = Date.now();
-      for (const landmark of landmarks) {
-        const id = landmark._id || landmark.id;
-        const lat = landmark.location?.latitude || landmark.latitude;
-        const lng = landmark.location?.longitude || landmark.longitude;
+      const database = db || await dbManager.getDatabase();
 
-        if (!id || !lat || !lng) continue;
-
-        db.runSync(
-          `INSERT OR REPLACE INTO landmarks
-          (id, name, description, category, latitude, longitude, timestamp, synced)
-          VALUES (?, ?, ?, ?, ?, ?, ?, 1);`,
-          [id, landmark.name, landmark.description || '', landmark.category || 'other', lat, lng, now]
-        );
+      if (!database) {
+        console.warn('Database not available for caching');
+        return;
       }
+
+      const now = Date.now();
+
+      // Use withTransactionAsync for atomic operations
+      await database.withTransactionAsync(async () => {
+        for (const landmark of landmarks) {
+          const id = landmark._id || landmark.id;
+          const lat = landmark.location?.latitude || landmark.latitude;
+          const lng = landmark.location?.longitude || landmark.longitude;
+
+          if (!id || !lat || !lng) continue;
+
+          await database.runAsync(
+            'INSERT OR REPLACE INTO landmarks (id, name, description, category, latitude, longitude, timestamp, synced) VALUES (?, ?, ?, ?, ?, ?, ?, 1)',
+            [id, landmark.name, landmark.description || '', landmark.category || 'other', lat, lng, now]
+          );
+        }
+      });
+
+      console.log(`Cached ${landmarks.length} landmarks`);
     } catch (error) {
       console.error('Cache landmarks error:', error);
     }
@@ -206,13 +269,8 @@ const LandmarkManager = ({ currentLocation, onLandmarksUpdate }) => {
       return;
     }
 
-    if (!db) {
-      Alert.alert('Error', 'Database not ready');
-      return;
-    }
-
     const landmarkData = {
-      id: `offline_${Date.now()}`,
+      id: `offline_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
       name: name.trim(),
       description: description.trim(),
       category,
@@ -223,21 +281,33 @@ const LandmarkManager = ({ currentLocation, onLandmarksUpdate }) => {
     };
 
     try {
-      // Save to local database first (offline-first approach)
-      db.runSync(
-        `INSERT INTO landmarks (id, name, description, category, latitude, longitude, timestamp, synced)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?);`,
-        [
-          landmarkData.id,
-          landmarkData.name,
-          landmarkData.description,
-          landmarkData.category,
-          landmarkData.latitude,
-          landmarkData.longitude,
-          landmarkData.timestamp,
-          0
-        ]
-      );
+      console.log('Saving landmark to local database...');
+
+      // Get database reference
+      const db = await dbManager.getDatabase();
+
+      if (!db) {
+        throw new Error('Database not available');
+      }
+
+      // Save to local database first using transaction
+      await db.withTransactionAsync(async () => {
+        await db.runAsync(
+          'INSERT INTO landmarks (id, name, description, category, latitude, longitude, timestamp, synced) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+          [
+            landmarkData.id,
+            landmarkData.name,
+            landmarkData.description,
+            landmarkData.category,
+            landmarkData.latitude,
+            landmarkData.longitude,
+            landmarkData.timestamp,
+            0
+          ]
+        );
+      });
+
+      console.log('Landmark saved to local database successfully');
 
       // Try to sync with backend if online
       if (isOnline) {
@@ -252,10 +322,12 @@ const LandmarkManager = ({ currentLocation, onLandmarksUpdate }) => {
 
           if (result.success) {
             // Update with server ID
-            db.runSync(
-              'UPDATE landmarks SET id = ?, synced = 1 WHERE id = ?;',
-              [result.data.id, landmarkData.id]
-            );
+            await db.withTransactionAsync(async () => {
+              await db.runAsync(
+                'UPDATE landmarks SET id = ?, synced = 1 WHERE id = ?',
+                [result.data.id, landmarkData.id]
+              );
+            });
             Alert.alert('Success', 'Landmark added and synced!');
           }
         } catch (syncError) {
@@ -269,20 +341,15 @@ const LandmarkManager = ({ currentLocation, onLandmarksUpdate }) => {
       setName('');
       setDescription('');
       setCategory('other');
-      setModalVisible(false);
-      loadLandmarks();
+      setAddModalVisible(false);
+      await loadLandmarks();
     } catch (error) {
       console.error('Add landmark error:', error);
       Alert.alert('Error', `Failed to save landmark: ${error.message}`);
     }
   };
 
-  const handleDeleteLandmark = async (landmarkId, landmarkName) => {
-    if (!db) {
-      Alert.alert('Error', 'Database not ready');
-      return;
-    }
-
+  const handleDeleteLandmark = (landmarkId, landmarkName) => {
     Alert.alert(
       'Delete Landmark',
       `Delete "${landmarkName}"?`,
@@ -291,124 +358,391 @@ const LandmarkManager = ({ currentLocation, onLandmarksUpdate }) => {
         {
           text: 'Delete',
           style: 'destructive',
-          onPress: async () => {
-            try {
-              // Delete from local database
-              db.runSync('DELETE FROM landmarks WHERE id = ?;', [landmarkId]);
-
-              // Try to delete from backend if online
-              if (isOnline && !landmarkId.startsWith('offline_')) {
-                try {
-                  await authService.deleteLandmark(landmarkId);
-                } catch (syncError) {
-                  console.log('Backend delete failed:', syncError);
-                }
-              }
-
-              Alert.alert('Success', 'Landmark deleted');
-              loadLandmarks();
-            } catch (error) {
-              console.error('Delete landmark error:', error);
-              Alert.alert('Error', `Failed to delete landmark: ${error.message}`);
-            }
-          }
+          onPress: () => performDelete(landmarkId)
         }
       ]
     );
   };
 
-  const getCategoryEmoji = (cat) => {
-    const found = CATEGORIES.find(c => c.value === cat);
-    return found ? found.emoji : '📍';
+  const performDelete = async (landmarkId) => {
+    try {
+      console.log('Deleting landmark from local database:', landmarkId);
+
+      // Get database reference
+      const db = await dbManager.getDatabase();
+
+      if (!db) {
+        throw new Error('Database not available');
+      }
+
+      // Delete from local database using transaction
+      await db.withTransactionAsync(async () => {
+        await db.runAsync('DELETE FROM landmarks WHERE id = ?', [landmarkId]);
+      });
+
+      console.log('Landmark deleted from local database');
+
+      // Try to delete from backend if online
+      if (isOnline && !landmarkId.startsWith('offline_')) {
+        try {
+          console.log('Attempting to delete from backend...');
+          await authService.deleteLandmark(landmarkId);
+          console.log('Landmark deleted from backend');
+        } catch (syncError) {
+          console.log('Backend delete failed (expected if offline):', syncError);
+        }
+      }
+
+      Alert.alert('Success', 'Landmark deleted');
+      await loadLandmarks();
+    } catch (error) {
+      console.error('Delete landmark error:', error);
+      Alert.alert('Error', `Failed to delete landmark: ${error.message}`);
+    }
+  };
+
+  const syncAllPendingChanges = async () => {
+    if (syncing) {
+      console.log('Sync already in progress, skipping...');
+      return;
+    }
+
+    setSyncing(true);
+    console.log('Starting sync of all pending changes...');
+
+    try {
+      await syncPendingLandmarks();
+      await loadLandmarks(); // Refresh the list after sync
+    } catch (error) {
+      console.error('Sync error:', error);
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  const syncPendingLandmarks = async () => {
+    try {
+      const db = await dbManager.getDatabase();
+
+      if (!db) {
+        console.warn('Database not available for sync');
+        return;
+      }
+
+      // Get all unsynced landmarks
+      const unsyncedLandmarks = await db.getAllAsync(
+        'SELECT * FROM landmarks WHERE synced = 0'
+      );
+
+      if (unsyncedLandmarks.length === 0) {
+        console.log('No pending landmarks to sync');
+        return;
+      }
+
+      console.log(`Syncing ${unsyncedLandmarks.length} pending landmarks...`);
+
+      let successCount = 0;
+      let failCount = 0;
+
+      for (const landmark of unsyncedLandmarks) {
+        try {
+          // Check if this is an offline-created landmark
+          if (landmark.id.startsWith('offline_')) {
+            console.log(`Syncing offline landmark: ${landmark.name}`);
+
+            const result = await authService.createLandmark(
+              landmark.name,
+              landmark.description,
+              landmark.category,
+              landmark.latitude,
+              landmark.longitude
+            );
+
+            if (result.success && result.data) {
+              // Update local database with server ID and mark as synced
+              await db.withTransactionAsync(async () => {
+                await db.runAsync(
+                  'UPDATE landmarks SET id = ?, synced = 1 WHERE id = ?',
+                  [result.data.id, landmark.id]
+                );
+              });
+
+              console.log(`Synced landmark: ${landmark.name} (new ID: ${result.data.id})`);
+              successCount++;
+            } else {
+              console.error(`Failed to sync landmark: ${landmark.name}`, result.error);
+              failCount++;
+            }
+          } else {
+            // This landmark has a server ID but wasn't marked as synced
+            // Just mark it as synced (it probably already exists on server)
+            await db.withTransactionAsync(async () => {
+              await db.runAsync(
+                'UPDATE landmarks SET synced = 1 WHERE id = ?',
+                [landmark.id]
+              );
+            });
+            successCount++;
+          }
+        } catch (error) {
+          console.error(`Error syncing landmark ${landmark.name}:`, error);
+          failCount++;
+        }
+      }
+
+      if (successCount > 0) {
+        Alert.alert(
+          'Sync Complete',
+          `Successfully synced ${successCount} landmark${successCount > 1 ? 's' : ''}${failCount > 0 ? `. ${failCount} failed.` : '.'}`
+        );
+      } else if (failCount > 0) {
+        Alert.alert(
+          'Sync Failed',
+          `Failed to sync ${failCount} landmark${failCount > 1 ? 's' : ''}. Will retry when online.`
+        );
+      }
+
+      console.log(`Sync complete: ${successCount} succeeded, ${failCount} failed`);
+    } catch (error) {
+      console.error('Sync pending landmarks error:', error);
+    }
   };
 
   const hasLocation = currentLocation?.latitude && currentLocation?.longitude;
 
+  // Filter landmarks based on search query
+  const filteredLandmarks = nearbyLandmarks.filter(landmark =>
+    landmark.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    (landmark.description && landmark.description.toLowerCase().includes(searchQuery.toLowerCase()))
+  );
+
+  // Close modal function
+  const closeModal = () => {
+    setListModalVisible(false);
+    translateY.value = 0;
+  };
+
+  // Pan gesture for dragging
+  const panGesture = Gesture.Pan()
+    .onStart(() => {
+      context.value = { y: translateY.value };
+    })
+    .onUpdate((event) => {
+      // Only allow dragging down
+      translateY.value = Math.max(0, context.value.y + event.translationY);
+    })
+    .onEnd((event) => {
+      // If dragged down more than 150px or velocity is high, close modal
+      if (translateY.value > 150 || event.velocityY > 500) {
+        translateY.value = withSpring(SCREEN_HEIGHT, {}, () => {
+          runOnJS(closeModal)();
+        });
+      } else {
+        // Snap back to original position
+        translateY.value = withSpring(0);
+      }
+    });
+
+  // Animated style for modal
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: translateY.value }],
+  }));
+
+  const getCategoryLabel = (value) => {
+    const cat = CATEGORIES.find(c => c.value === value);
+    return cat ? cat.label : 'Other';
+  };
+
   return (
     <>
-      <View style={styles.container}>
-        <View style={styles.header}>
-          <Text style={styles.title}>🗺️ Landmarks</Text>
-          {!isOnline && <Text style={styles.offlineBadge}>🔴 Offline Mode</Text>}
-        </View>
+      {/* Compact Header */}
+      <TouchableOpacity
+        style={styles.compactHeader}
+        onPress={() => setListModalVisible(true)}
+      >
+        <Text style={styles.compactTitle}>Recognize landmarks near you that can help?</Text>
+        <Ionicons name="arrow-forward" size={24} color="#000" />
+      </TouchableOpacity>
 
-        {!hasLocation && (
-          <View style={styles.warningBanner}>
-            <Text style={styles.warningText}>⏳ Waiting for GPS...</Text>
-          </View>
-        )}
-
+      {/* Landmarks List Modal */}
+      <Modal
+        visible={listModalVisible}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={closeModal}
+      >
         <TouchableOpacity
-          style={[styles.button, (!hasLocation || !db) && styles.buttonDisabled]}
-          onPress={() => setModalVisible(true)}
-          disabled={!hasLocation || !db}
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={closeModal}
         >
-          <Text style={styles.buttonText}>➕ Add Landmark</Text>
-        </TouchableOpacity>
+          <View style={styles.listModalContent} onStartShouldSetResponder={() => true}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Landmarks</Text>
+              <View style={styles.headerRight}>
+                {syncing && (
+                  <View style={styles.syncIndicator}>
+                    <ActivityIndicator size="small" color="#001f3f" />
+                    <Text style={styles.syncText}>Syncing...</Text>
+                  </View>
+                )}
+                <TouchableOpacity onPress={() => setListModalVisible(false)}>
+                  <Ionicons name="close" size={24} color="#333" />
+                </TouchableOpacity>
+              </View>
+            </View>
 
-        {nearbyLandmarks.length > 0 && (
-          <View style={styles.landmarksList}>
-            <Text style={styles.listTitle}>
-              Nearby ({nearbyLandmarks.length})
-            </Text>
+            {/* Search Bar */}
+            <View style={styles.searchContainer}>
+              <Ionicons name="search" size={20} color="#666" style={styles.searchIcon} />
+              <TextInput
+                style={styles.searchInput}
+                placeholder="Search landmarks..."
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+              />
+            </View>
 
-            <ScrollView style={styles.scrollView} nestedScrollEnabled={true}>
-              {nearbyLandmarks.map((landmark, index) => {
-                const landmarkId = landmark.id || landmark._id;
-                const isOffline = !landmark.synced || landmarkId?.startsWith('offline_');
+            {/* Add Landmark Button */}
+            <TouchableOpacity
+              style={[styles.addButton, (!hasLocation || !dbReady) && styles.buttonDisabled]}
+              onPress={() => {
+                setListModalVisible(false);
+                setAddModalVisible(true);
+              }}
+              disabled={!hasLocation || !dbReady}
+            >
+              <Ionicons name="add-circle-outline" size={18} color="#fff" />
+              <Text style={styles.addButtonText}>Add Landmark</Text>
+            </TouchableOpacity>
 
-                return (
-                  <View key={landmarkId || index} style={styles.landmarkItem}>
-                    <View style={styles.landmarkHeader}>
-                      <View style={styles.landmarkMainInfo}>
-                        <Text style={styles.landmarkName}>
-                          {getCategoryEmoji(landmark.category)} {landmark.name}
-                          {isOffline && <Text style={styles.offlineIndicator}> 🔄</Text>}
-                        </Text>
-                        {landmark.description && (
-                          <Text style={styles.landmarkDescription}>{landmark.description}</Text>
+            {/* Landmarks List */}
+            {loading && <ActivityIndicator size="small" color="#001f3f" style={styles.loader} />}
+
+            {filteredLandmarks.length > 0 ? (
+              <ScrollView style={styles.landmarksScrollView}>
+                {filteredLandmarks.map((landmark, index) => {
+                  const landmarkId = landmark.id || landmark._id;
+                  const isOffline = !landmark.synced || landmarkId?.startsWith('offline_');
+
+                  const handleLandmarkPress = () => {
+                    if (onLandmarkClick) {
+                      onLandmarkClick(landmark);
+                      setListModalVisible(false);
+                    }
+                  };
+
+                  return (
+                    <TouchableOpacity
+                      key={landmarkId || index}
+                      style={styles.landmarkItem}
+                      onPress={handleLandmarkPress}
+                      activeOpacity={0.7}
+                    >
+                      <View style={styles.landmarkHeader}>
+                        <View style={styles.landmarkMainInfo}>
+                          <Text style={styles.landmarkName}>
+                            {landmark.name}
+                          </Text>
+                          {landmark.description && (
+                            <Text style={styles.landmarkDescription}>{landmark.description}</Text>
+                          )}
+                        </View>
+
+                        {landmarkId && (
+                          <TouchableOpacity
+                            style={styles.deleteButton}
+                            onPress={(e) => {
+                              e.stopPropagation();
+                              handleDeleteLandmark(landmarkId, landmark.name);
+                            }}
+                          >
+                            <Ionicons name="trash-outline" size={18} color="#6b7280" />
+                          </TouchableOpacity>
                         )}
                       </View>
-
-                      {landmarkId && (
-                        <TouchableOpacity
-                          style={styles.deleteButton}
-                          onPress={() => handleDeleteLandmark(landmarkId, landmark.name)}
-                        >
-                          <Text style={styles.deleteButtonText}>🗑️</Text>
-                        </TouchableOpacity>
-                      )}
-                    </View>
-                  </View>
-                );
-              })}
-            </ScrollView>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+            ) : (
+              <View style={styles.emptyState}>
+                <Text style={styles.emptyText}>
+                  {searchQuery ? 'No landmarks match your search' : 'No landmarks nearby'}
+                </Text>
+              </View>
+            )}
           </View>
-        )}
-
-        {loading && <ActivityIndicator size="small" color="#007AFF" style={styles.loader} />}
-      </View>
+        </TouchableOpacity>
+      </Modal>
 
       {/* Add Landmark Modal */}
       <Modal
-        visible={modalVisible}
+        visible={addModalVisible}
         animationType="slide"
         transparent={true}
-        onRequestClose={() => setModalVisible(false)}
+        onRequestClose={() => setAddModalVisible(false)}
       >
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <Text style={styles.modalTitle}>Add New Landmark</Text>
 
-            <TextInput
-              style={styles.input}
-              placeholder="Landmark Name"
-              value={name}
-              onChangeText={setName}
-            />
+            {/* Name and Category Row */}
+            <View style={styles.inputRow}>
+              <TextInput
+                style={[styles.input, styles.nameInput]}
+                placeholder="Landmark Name"
+                value={name}
+                onChangeText={setName}
+              />
+
+              {/* Category Dropdown */}
+              <View style={styles.dropdownContainer}>
+                <TouchableOpacity
+                  style={styles.dropdownButton}
+                  onPress={() => setCategoryDropdownVisible(!categoryDropdownVisible)}
+                >
+                  <Text style={styles.dropdownButtonText}>{getCategoryLabel(category)}</Text>
+                  <Ionicons
+                    name={categoryDropdownVisible ? "chevron-up" : "chevron-down"}
+                    size={16}
+                    color="#666"
+                  />
+                </TouchableOpacity>
+
+                {categoryDropdownVisible && (
+                  <View style={styles.dropdownList}>
+                    <ScrollView style={styles.dropdownScrollView}>
+                      {CATEGORIES.map((cat) => (
+                        <TouchableOpacity
+                          key={cat.value}
+                          style={[
+                            styles.dropdownItem,
+                            category === cat.value && styles.dropdownItemActive
+                          ]}
+                          onPress={() => {
+                            setCategory(cat.value);
+                            setCategoryDropdownVisible(false);
+                          }}
+                        >
+                          <Text
+                            style={[
+                              styles.dropdownItemText,
+                              category === cat.value && styles.dropdownItemTextActive
+                            ]}
+                          >
+                            {cat.label}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </ScrollView>
+                  </View>
+                )}
+              </View>
+            </View>
 
             <TextInput
-              style={styles.input}
+              style={[styles.input, styles.descriptionInput]}
               placeholder="Description (optional)"
               value={description}
               onChangeText={setDescription}
@@ -416,33 +750,13 @@ const LandmarkManager = ({ currentLocation, onLandmarksUpdate }) => {
               numberOfLines={3}
             />
 
-            <Text style={styles.label}>Category:</Text>
-            <ScrollView style={styles.categoryScroll}>
-              {CATEGORIES.map((cat) => (
-                <TouchableOpacity
-                  key={cat.value}
-                  style={[
-                    styles.categoryButton,
-                    category === cat.value && styles.categoryButtonActive,
-                  ]}
-                  onPress={() => setCategory(cat.value)}
-                >
-                  <Text
-                    style={[
-                      styles.categoryButtonText,
-                      category === cat.value && styles.categoryButtonTextActive,
-                    ]}
-                  >
-                    {cat.label}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-
             <View style={styles.modalButtons}>
               <TouchableOpacity
                 style={[styles.modalButton, styles.cancelButton]}
-                onPress={() => setModalVisible(false)}
+                onPress={() => {
+                  setAddModalVisible(false);
+                  setCategoryDropdownVisible(false);
+                }}
               >
                 <Text style={styles.cancelButtonText}>Cancel</Text>
               </TouchableOpacity>
@@ -462,69 +776,106 @@ const LandmarkManager = ({ currentLocation, onLandmarksUpdate }) => {
 };
 
 const styles = StyleSheet.create({
-  container: {
-    backgroundColor: '#fff',
-    padding: 15,
-    borderRadius: 10,
-    marginBottom: 15,
-  },
-  header: {
+  compactHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 15,
+    backgroundColor: '#fff',
+    padding: 15,
+    borderRadius: 8,
+    marginBottom: 0,
   },
-  title: {
+  compactTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#000',
+    flex: 1,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
+  },
+  listModalContent: {
+    backgroundColor: '#fff',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 24,
+    maxHeight: '90%',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  headerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  syncIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    backgroundColor: '#E3F2FD',
+    borderRadius: 12,
+  },
+  syncText: {
+    fontSize: 12,
+    color: '#001f3f',
+    fontWeight: '500',
+  },
+  modalTitle: {
     fontSize: 18,
     fontWeight: '600',
     color: '#333',
   },
-  offlineBadge: {
-    fontSize: 12,
-    color: '#FF3B30',
-    fontWeight: '600',
-  },
-  button: {
-    padding: 12,
-    borderRadius: 8,
+  searchContainer: {
+    flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 10,
-    backgroundColor: '#007AFF',
+    backgroundColor: '#f8f9fa',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    marginBottom: 12,
   },
-  buttonText: {
+  searchIcon: {
+    marginRight: 8,
+  },
+  searchInput: {
+    flex: 1,
+    paddingVertical: 10,
+    fontSize: 14,
+    color: '#333',
+  },
+  addButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#001f3f',
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    marginBottom: 16,
+    gap: 6,
+  },
+  addButtonText: {
     color: '#fff',
     fontWeight: '600',
+    fontSize: 14,
   },
   buttonDisabled: {
     backgroundColor: '#ccc',
     opacity: 0.6,
   },
-  warningBanner: {
-    backgroundColor: '#FFF3CD',
-    padding: 10,
-    borderRadius: 8,
-    marginBottom: 10,
-  },
-  warningText: {
-    color: '#856404',
-    fontSize: 14,
-    fontWeight: '500',
-  },
-  landmarksList: {
-    marginTop: 15,
-  },
-  listTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#333',
-    marginBottom: 10,
-  },
-  scrollView: {
-    maxHeight: 300,
+  landmarksScrollView: {
+    maxHeight: 400,
   },
   landmarkItem: {
-    padding: 10,
-    backgroundColor: '#f9f9f9',
+    padding: 12,
+    backgroundColor: '#f8f9fa',
     borderRadius: 8,
     marginBottom: 8,
   },
@@ -537,35 +888,32 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   landmarkName: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: '600',
     color: '#333',
     marginBottom: 4,
   },
-  offlineIndicator: {
-    fontSize: 12,
-    color: '#FF9500',
-  },
   landmarkDescription: {
-    fontSize: 14,
-    color: '#666',
+    fontSize: 11,
+    color: '#6b7280',
     marginBottom: 4,
+    lineHeight: 16,
   },
   deleteButton: {
-    padding: 8,
-    marginLeft: 10,
+    padding: 6,
+    marginLeft: 8,
   },
-  deleteButtonText: {
-    fontSize: 20,
+  emptyState: {
+    padding: 32,
+    alignItems: 'center',
+  },
+  emptyText: {
+    fontSize: 14,
+    color: '#6b7280',
+    textAlign: 'center',
   },
   loader: {
-    marginTop: 10,
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
+    marginVertical: 10,
   },
   modalContent: {
     backgroundColor: '#fff',
@@ -573,51 +921,84 @@ const styles = StyleSheet.create({
     padding: 20,
     width: '90%',
     maxHeight: '80%',
+    alignSelf: 'center',
+    marginTop: 'auto',
+    marginBottom: 'auto',
   },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    marginBottom: 20,
-    textAlign: 'center',
-    color: '#333',
+  inputRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginBottom: 15,
   },
   input: {
     backgroundColor: '#f5f5f5',
     padding: 12,
     borderRadius: 8,
+    fontSize: 16,
+    borderWidth: 1,
+    borderColor: '#ddd',
+  },
+  nameInput: {
+    flex: 1,
+  },
+  descriptionInput: {
     marginBottom: 15,
-    fontSize: 16,
-    borderWidth: 1,
-    borderColor: '#ddd',
+    minHeight: 80,
+    textAlignVertical: 'top',
   },
-  label: {
-    fontSize: 16,
-    fontWeight: '600',
-    marginBottom: 10,
-    color: '#333',
+  dropdownContainer: {
+    width: 130,
+    position: 'relative',
   },
-  categoryScroll: {
-    maxHeight: 200,
-    marginBottom: 20,
-  },
-  categoryButton: {
-    padding: 12,
+  dropdownButton: {
     backgroundColor: '#f5f5f5',
+    padding: 12,
     borderRadius: 8,
-    marginBottom: 8,
     borderWidth: 1,
     borderColor: '#ddd',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
   },
-  categoryButtonActive: {
+  dropdownButtonText: {
+    fontSize: 14,
+    color: '#333',
+    fontWeight: '500',
+  },
+  dropdownList: {
+    position: 'absolute',
+    top: 50,
+    left: 0,
+    right: 0,
+    backgroundColor: '#fff',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#ddd',
+    maxHeight: 200,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    elevation: 5,
+    zIndex: 1000,
+  },
+  dropdownScrollView: {
+    maxHeight: 200,
+  },
+  dropdownItem: {
+    padding: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
+  },
+  dropdownItemActive: {
     backgroundColor: '#E3F2FD',
-    borderColor: '#007AFF',
   },
-  categoryButtonText: {
-    fontSize: 16,
+  dropdownItemText: {
+    fontSize: 14,
     color: '#666',
   },
-  categoryButtonTextActive: {
-    color: '#007AFF',
+  dropdownItemTextActive: {
+    color: '#001f3f',
     fontWeight: '600',
   },
   modalButtons: {
@@ -634,7 +1015,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#f5f5f5',
   },
   submitButton: {
-    backgroundColor: '#007AFF',
+    backgroundColor: '#001f3f',
   },
   cancelButtonText: {
     color: '#666',

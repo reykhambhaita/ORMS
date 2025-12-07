@@ -1,57 +1,58 @@
 // src/components/mechanics/MechanicFinder.jsx
+import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import * as SQLite from 'expo-sqlite';
 import { forwardRef, useEffect, useImperativeHandle, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
   Linking,
+  Modal,
   ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
-  View,
+  View
 } from 'react-native';
 import authService from '../../screens/authService.js';
+import dbManager from '../../utils/database';
 
 
-
-const MechanicFinder = forwardRef(({ currentLocation, onMechanicsUpdate, navigation }, ref) => {
+const MechanicFinder = forwardRef(({ searchLocation, searchLocationName, onResetToGPS, onMechanicsUpdate, navigation }, ref) => {
   const [loading, setLoading] = useState(false);
   const [mechanics, setMechanics] = useState([]);
-
-  const db = SQLite.openDatabaseSync('locationtracker.db');
+  const [selectedMechanic, setSelectedMechanic] = useState(null);
+  const [detailModalVisible, setDetailModalVisible] = useState(false);
 
   useEffect(() => {
-    if (currentLocation?.latitude && currentLocation?.longitude) {
+    if (searchLocation?.latitude && searchLocation?.longitude) {
       loadMechanics();
     }
-  }, [currentLocation?.latitude, currentLocation?.longitude]);
+  }, [searchLocation?.latitude, searchLocation?.longitude]);
 
   const loadMechanics = async () => {
-    if (!currentLocation?.latitude || !currentLocation?.longitude) return;
+    if (!searchLocation?.latitude || !searchLocation?.longitude) return;
 
     setLoading(true);
 
     try {
-      console.log('📍 Loading mechanics from location:', {
-        lat: currentLocation.latitude,
-        lng: currentLocation.longitude
+      console.log('Loading mechanics from location:', {
+        lat: searchLocation.latitude,
+        lng: searchLocation.longitude,
+        name: searchLocationName || 'GPS'
       });
 
-      // Load from cache first
       const cached = await getCachedMechanics(
-        currentLocation.latitude,
-        currentLocation.longitude
+        searchLocation.latitude,
+        searchLocation.longitude
       );
 
-      console.log('💾 Cached mechanics:', cached.length);
+      console.log('Cached mechanics:', cached.length);
 
       if (cached.length > 0) {
         const mechanicsWithDistance = cached.map(mechanic => {
           const distance = calculateDistance(
-            currentLocation.latitude,
-            currentLocation.longitude,
+            searchLocation.latitude,
+            searchLocation.longitude,
             mechanic.latitude,
             mechanic.longitude
           );
@@ -70,22 +71,19 @@ const MechanicFinder = forwardRef(({ currentLocation, onMechanicsUpdate, navigat
         }
       }
 
-      // Fetch from backend
       const result = await authService.getNearbyMechanics(
-        currentLocation.latitude,
-        currentLocation.longitude,
-        50000 // 50km radius
+        searchLocation.latitude,
+        searchLocation.longitude,
+        50000
       );
 
-      console.log('📡 Backend result:', result);
+      console.log('Backend result:', result);
 
       if (result.success && result.data) {
-        console.log('✅ Found mechanics:', result.data.length);
+        console.log('Found mechanics:', result.data.length);
 
-        // Cache to SQLite
         await cacheMechanics(result.data);
 
-        // Calculate distances with detailed logging
         const mechanicsWithDistance = result.data.map(mechanic => {
           const lat = mechanic.location?.latitude || mechanic.latitude;
           const lng = mechanic.location?.longitude || mechanic.longitude;
@@ -93,8 +91,8 @@ const MechanicFinder = forwardRef(({ currentLocation, onMechanicsUpdate, navigat
           console.log(`Mechanic "${mechanic.name}": lat=${lat}, lng=${lng}`);
 
           const distance = calculateDistance(
-            currentLocation.latitude,
-            currentLocation.longitude,
+            searchLocation.latitude,
+            searchLocation.longitude,
             lat,
             lng
           );
@@ -119,22 +117,21 @@ const MechanicFinder = forwardRef(({ currentLocation, onMechanicsUpdate, navigat
           onMechanicsUpdate(mechanicsWithDistance);
         }
       } else {
-        console.log('❌ Failed to load mechanics:', result.error);
+        console.log('Failed to load mechanics:', result.error);
       }
     } catch (error) {
       console.error('Load mechanics error:', error);
 
-      // Use cached data on error
       const cached = await getCachedMechanics(
-        currentLocation.latitude,
-        currentLocation.longitude
+        searchLocation.latitude,
+        searchLocation.longitude
       );
 
       const mechanicsWithDistance = cached.map(mechanic => ({
         ...mechanic,
         distanceFromUser: calculateDistance(
-          currentLocation.latitude,
-          currentLocation.longitude,
+          searchLocation.latitude,
+          searchLocation.longitude,
           mechanic.latitude,
           mechanic.longitude
         )
@@ -151,35 +148,34 @@ const MechanicFinder = forwardRef(({ currentLocation, onMechanicsUpdate, navigat
     }
   };
 
-  // Expose refreshMechanics method to parent via ref
   useImperativeHandle(ref, () => ({
     refreshMechanics: async () => {
-      console.log('🔄 Refreshing mechanics list...');
-      if (currentLocation?.latitude && currentLocation?.longitude) {
-        // Clear cached mechanics for this location to force fresh data
+      console.log('Refreshing mechanics list...');
+      if (searchLocation?.latitude && searchLocation?.longitude) {
         try {
+          const db = await dbManager.getDatabase();
           await db.runAsync('DELETE FROM mechanics;');
-          console.log('✅ Cleared mechanic cache');
+          console.log('Cleared mechanic cache');
         } catch (error) {
           console.error('Failed to clear mechanic cache:', error);
         }
-        // Reload mechanics
         await loadMechanics();
       }
     }
   }));
 
   const calculateDistance = (lat1, lon1, lat2, lon2) => {
-    // Validate inputs
     if (!lat1 || !lon1 || !lat2 || !lon2) {
       console.warn('Invalid coordinates for distance calculation:', { lat1, lon1, lat2, lon2 });
       return null;
     }
 
-    // Earth's radius in kilometers
-    const R = 6371;
+    if (lat1 === lat2 && lon1 === lon2) {
+      console.log('Same location - distance is 0km');
+      return 0;
+    }
 
-    // Convert degrees to radians
+    const R = 6371;
     const toRad = (degrees) => degrees * (Math.PI / 180);
 
     const dLat = toRad(lat2 - lat1);
@@ -191,19 +187,19 @@ const MechanicFinder = forwardRef(({ currentLocation, onMechanicsUpdate, navigat
       Math.sin(dLon / 2) * Math.sin(dLon / 2);
 
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    const distance = R * c; // Distance in kilometers
+    const distance = R * c;
 
-    console.log(`Distance calculated: ${distance.toFixed(2)}km between (${lat1}, ${lon1}) and (${lat2}, ${lon2})`);
+    console.log(`Distance: ${distance.toFixed(2)}km`);
+    console.log(`  From: (${lat1.toFixed(6)}, ${lon1.toFixed(6)})`);
+    console.log(`  To:   (${lat2.toFixed(6)}, ${lon2.toFixed(6)})`);
 
     return distance;
   };
 
-  // Update loadMechanics - replace mechanicsWithDistance mapping:
-
-
   const getCachedMechanics = async (latitude, longitude) => {
     try {
-      const latDelta = 50 / 111.32; // 50km
+      const db = await dbManager.getDatabase();
+      const latDelta = 50 / 111.32;
       const lngDelta = 50 / (111.32 * Math.cos(latitude * Math.PI / 180));
 
       const result = await db.getAllAsync(
@@ -219,7 +215,6 @@ const MechanicFinder = forwardRef(({ currentLocation, onMechanicsUpdate, navigat
         ]
       );
 
-      // Parse specialties JSON
       return (result || []).map(m => ({
         ...m,
         specialties: JSON.parse(m.specialties || '[]'),
@@ -235,6 +230,7 @@ const MechanicFinder = forwardRef(({ currentLocation, onMechanicsUpdate, navigat
     if (!mechanics || mechanics.length === 0) return;
 
     try {
+      const db = await dbManager.getDatabase();
       const now = Date.now();
       for (const mechanic of mechanics) {
         const id = mechanic._id || mechanic.id;
@@ -264,6 +260,7 @@ const MechanicFinder = forwardRef(({ currentLocation, onMechanicsUpdate, navigat
       console.error('Cache mechanics error:', error);
     }
   };
+
   const handleCallMechanic = (mechanicId, mechanicName, phone) => {
     if (!phone) {
       Alert.alert('No Phone Number', 'This mechanic has no contact number.');
@@ -279,7 +276,6 @@ const MechanicFinder = forwardRef(({ currentLocation, onMechanicsUpdate, navigat
           text: 'Call',
           onPress: async () => {
             try {
-              // Log call start
               const callStartTime = new Date();
               const result = await authService.createCallLog(
                 mechanicId,
@@ -289,21 +285,14 @@ const MechanicFinder = forwardRef(({ currentLocation, onMechanicsUpdate, navigat
 
               if (result.success) {
                 console.log('Call log created:', result.data.id);
-
-                // Store call log ID for ending later
                 await AsyncStorage.setItem('current_call_log_id', result.data.id);
                 await AsyncStorage.setItem('current_call_mechanic_id', mechanicId);
                 await AsyncStorage.setItem('current_call_start_time', callStartTime.toISOString());
               }
 
-              // Make the call
               Linking.openURL(`tel:${phone}`);
-
-              // Note: Detecting when call ends is not directly possible in React Native
-              // We'll provide a manual "End Call & Review" button instead
             } catch (error) {
               console.error('Call log error:', error);
-              // Still make the call even if logging fails
               Linking.openURL(`tel:${phone}`);
             }
           }
@@ -318,21 +307,17 @@ const MechanicFinder = forwardRef(({ currentLocation, onMechanicsUpdate, navigat
       const storedMechanicId = await AsyncStorage.getItem('current_call_mechanic_id');
 
       if (!callLogId || storedMechanicId !== mechanicId) {
-        // No active call for this mechanic
         navigation.navigate('ReviewMechanic', { mechanicId, mechanicName });
         return;
       }
 
-      // End the call log
       const callEndTime = new Date();
       const result = await authService.endCallLog(callLogId, callEndTime);
 
-      // Clear stored call data
       await AsyncStorage.removeItem('current_call_log_id');
       await AsyncStorage.removeItem('current_call_mechanic_id');
       await AsyncStorage.removeItem('current_call_start_time');
 
-      // Navigate to review screen
       navigation.navigate('ReviewMechanic', {
         mechanicId,
         mechanicName,
@@ -340,268 +325,397 @@ const MechanicFinder = forwardRef(({ currentLocation, onMechanicsUpdate, navigat
       });
     } catch (error) {
       console.error('End call error:', error);
-      // Still navigate to review screen
       navigation.navigate('ReviewMechanic', { mechanicId, mechanicName });
     }
   };
 
-  const hasLocation = currentLocation?.latitude && currentLocation?.longitude;
+  const hasLocation = searchLocation?.latitude && searchLocation?.longitude;
+
+  const openDetailModal = (mechanic) => {
+    setSelectedMechanic(mechanic);
+    setDetailModalVisible(true);
+  };
+
+  const closeDetailModal = () => {
+    setDetailModalVisible(false);
+    setSelectedMechanic(null);
+  };
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>Find Mechanics</Text>
-
-      {!hasLocation && (
-        <View style={styles.warningBanner}>
-          <Text style={styles.warningText}>Waiting for GPS...</Text>
-        </View>
-      )}
-
-      {loading && (
-        <ActivityIndicator size="small" color="#FF6B35" style={styles.loader} />
-      )}
-
-      {mechanics.length > 0 && (
-        <View style={styles.mechanicsList}>
-          <Text style={styles.listTitle}>
-            Nearby Mechanics ({mechanics.length})
+    <>
+      <View style={styles.mechanicsContainer}>
+        <View style={styles.containerHeader}>
+          <Text style={styles.containerTitle}>
+            {mechanics.length > 0
+              ? `${mechanics.length} Mechanic${mechanics.length > 1 ? 's' : ''} nearby`
+              : 'Find Mechanics'}
           </Text>
+          {searchLocationName && (
+            <View style={styles.searchLocationBadge}>
+              <Ionicons name="location" size={12} color="#0A4D4D" />
+              <Text style={styles.searchLocationText}>{searchLocationName}</Text>
+            </View>
+          )}
+        </View>
 
+        {loading && <ActivityIndicator size="small" color="#0A4D4D" style={styles.loader} />}
+
+        {mechanics.length > 0 ? (
           <ScrollView
             style={styles.mechanicsScrollView}
-            nestedScrollEnabled={true}
-            showsVerticalScrollIndicator={true}
+            showsVerticalScrollIndicator={false}
           >
             {mechanics.map((mechanic, index) => (
-              <View key={mechanic.id || mechanic._id || index} style={styles.mechanicCard}>
-                <View style={styles.mechanicHeader}>
-                  <View style={styles.mechanicInfo}>
+              <TouchableOpacity
+                key={mechanic.id || mechanic._id || index}
+                style={styles.mechanicCard}
+                onPress={() => openDetailModal(mechanic)}
+                activeOpacity={0.7}
+              >
+                <View style={styles.cardHeader}>
+                  <View style={styles.cardLeft}>
                     <Text style={styles.mechanicName}>{mechanic.name}</Text>
-                    <View style={styles.ratingRow}>
-                      <Text style={styles.rating}>⭐ {mechanic.rating?.toFixed(1) || 'New'}</Text>
-                      {mechanic.available && (
-                        <Text style={styles.availableBadge}>Available</Text>
-                      )}
+                    <View style={styles.starRating}>
+                      {[1, 2, 3, 4, 5].map((star) => (
+                        <Ionicons
+                          key={star}
+                          name={star <= Math.round(mechanic.rating || 0) ? 'star' : 'star-outline'}
+                          size={14}
+                          color="#000000ff"
+                        />
+                      ))}
+                      <Text style={styles.ratingValue}>
+                        {(mechanic.rating || 0).toFixed(1)}
+                      </Text>
                     </View>
                   </View>
-                </View>
-
-                {mechanic.specialties && mechanic.specialties.length > 0 && (
-                  <View style={styles.specialtiesContainer}>
-                    <Text style={styles.specialtiesLabel}>Specialties:</Text>
-                    <Text style={styles.specialtiesText}>
-                      {mechanic.specialties.join(', ')}
+                  <View style={styles.distanceBadge}>
+                    <Text style={styles.distanceText}>
+                      {mechanic.distanceFromUser != null
+                        ? mechanic.distanceFromUser < 1
+                          ? `${(mechanic.distanceFromUser * 1000).toFixed(0)}m`
+                          : `${mechanic.distanceFromUser.toFixed(1)}km`
+                        : '0km'}
                     </Text>
                   </View>
-                )}
-
-                <View style={styles.distanceRow}>
-                  <Text style={styles.distanceText}>
-                    📍 {mechanic.distanceFromUser != null
-                      ? mechanic.distanceFromUser < 1
-                        ? `${(mechanic.distanceFromUser * 1000).toFixed(0)}m away`
-                        : `${mechanic.distanceFromUser.toFixed(2)}km away`
-                      : 'Distance unknown'}
-                  </Text>
                 </View>
-
-                <View style={styles.buttonRow}>
-                  <TouchableOpacity
-                    style={[styles.actionButton, styles.callButton]}
-                    onPress={() => handleCallMechanic(
-                      mechanic.id || mechanic._id,
-                      mechanic.name,
-                      mechanic.phone
-                    )}
-                  >
-                    <Text style={styles.callButtonText}>
-                      📞 Call
-                    </Text>
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    style={[styles.actionButton, styles.payButton]}
-                    onPress={() => navigation.navigate('Payment', {
-                      mechanicId: mechanic.id || mechanic._id,
-                      mechanicName: mechanic.name,
-                      mechanicPhone: mechanic.phone
-                    })}
-                  >
-                    <Text style={styles.payButtonText}>
-                      💳 Pay
-                    </Text>
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    style={[styles.actionButton, styles.reviewButton]}
-                    onPress={() => handleEndCallAndReview(
-                      mechanic.id || mechanic._id,
-                      mechanic.name
-                    )}
-                  >
-                    <Text style={styles.reviewButtonText}>
-                      ⭐ Review
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
+              </TouchableOpacity>
             ))}
           </ScrollView>
-        </View>
-      )}
+        ) : (
+          <View style={styles.emptyState}>
+            <Ionicons name="construct-outline" size={48} color="#C0C0C0" />
+            <Text style={styles.emptyText}>
+              {!hasLocation
+                ? 'Waiting for location...'
+                : 'No mechanics found nearby'}
+            </Text>
+          </View>
+        )}
+      </View>
 
-      {!loading && mechanics.length === 0 && hasLocation && (
-        <Text style={styles.emptyText}>
-          No mechanics found nearby. Try again or check your connection.
-        </Text>
+      {selectedMechanic && (
+        <Modal
+          visible={detailModalVisible}
+          animationType="slide"
+          transparent={true}
+          onRequestClose={closeDetailModal}
+        >
+          <View style={styles.modalOverlay}>
+            <TouchableOpacity
+              style={styles.modalBackdrop}
+              activeOpacity={1}
+              onPress={closeDetailModal}
+            />
+            <View style={styles.modalContent}>
+              <View style={styles.modalHandle} />
+
+              <View style={styles.modalHeader}>
+                <View>
+                  <Text style={styles.modalTitle}>{selectedMechanic.name}</Text>
+                  <View style={styles.modalRating}>
+                    {[1, 2, 3, 4, 5].map((star) => (
+                      <Ionicons
+                        key={star}
+                        name={star <= Math.round(selectedMechanic.rating || 0) ? 'star' : 'star-outline'}
+                        size={16}
+                        color="#000000ff"
+                      />
+                    ))}
+                    <Text style={styles.modalRatingText}>
+                      {(selectedMechanic.rating || 0).toFixed(1)}
+                    </Text>
+                  </View>
+                </View>
+                <TouchableOpacity
+                  onPress={closeDetailModal}
+                  style={styles.closeButton}
+                >
+                  <Ionicons name="close" size={24} color="#6B7280" />
+                </TouchableOpacity>
+              </View>
+
+              <View style={styles.modalDistance}>
+                <Ionicons name="location-outline" size={18} color="#6B7280" />
+                <Text style={styles.modalDistanceText}>
+                  {selectedMechanic.distanceFromUser != null
+                    ? selectedMechanic.distanceFromUser < 1
+                      ? `${(selectedMechanic.distanceFromUser * 1000).toFixed(0)} meters away`
+                      : `${selectedMechanic.distanceFromUser.toFixed(1)} km away`
+                    : '0.0 km away'}
+                </Text>
+              </View>
+
+              <View style={styles.modalActions}>
+                <TouchableOpacity
+                  style={[styles.actionButton, styles.callButton]}
+                  onPress={() => {
+                    closeDetailModal();
+                    handleCallMechanic(
+                      selectedMechanic.id || selectedMechanic._id,
+                      selectedMechanic.name,
+                      selectedMechanic.phone
+                    );
+                  }}
+                >
+                  <Ionicons name="call" size={20} color="#FFFFFF" />
+                  <Text style={styles.callButtonText}>Call Now</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.actionButton, styles.walletButton]}
+                  onPress={() => {
+                    closeDetailModal();
+                    navigation.navigate('Payment', {
+                      mechanicId: selectedMechanic.id || selectedMechanic._id,
+                      mechanicName: selectedMechanic.name,
+                      mechanicPhone: selectedMechanic.phone
+                    });
+                  }}
+                >
+                  <Ionicons name="wallet-outline" size={20} color="#0A4D4D" />
+                  <Text style={styles.walletButtonText}>Payment</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.actionButton, styles.reviewButton]}
+                  onPress={() => {
+                    closeDetailModal();
+                    handleEndCallAndReview(
+                      selectedMechanic.id || selectedMechanic._id,
+                      selectedMechanic.name
+                    );
+                  }}
+                >
+                  <Ionicons name="star-outline" size={20} color="#6B7280" />
+                  <Text style={styles.reviewButtonText}>Leave a review</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
       )}
-    </View>
+    </>
   );
 });
 
 const styles = StyleSheet.create({
-  container: {
-    backgroundColor: '#fff',
-    padding: 15,
-    borderRadius: 10,
-    marginBottom: 15,
+  mechanicsContainer: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 16,
+
   },
-  title: {
+  containerHeader: {
+    marginBottom: 16,
+  },
+  containerTitle: {
     fontSize: 18,
-    fontWeight: '600',
-    marginBottom: 15,
-    color: '#333',
+    fontWeight: '700',
+    color: '#1F2937',
+    marginBottom: 4,
   },
-  warningBanner: {
-    backgroundColor: '#FFF3CD',
-    padding: 10,
-    borderRadius: 8,
-    marginBottom: 10,
-    borderLeftWidth: 4,
-    borderLeftColor: '#FFC107',
+  searchLocationBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 4,
   },
-  warningText: {
-    color: '#856404',
-    fontSize: 14,
+  searchLocationText: {
+    fontSize: 12,
+    color: '#0A4D4D',
     fontWeight: '500',
   },
   loader: {
-    marginVertical: 10,
-  },
-  mechanicsList: {
-    marginTop: 10,
-  },
-  listTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#333',
-    marginBottom: 10,
+    marginVertical: 20,
   },
   mechanicsScrollView: {
-    maxHeight: 400,
+    maxHeight: 150,
   },
   mechanicCard: {
-    backgroundColor: '#FFF5F0',
-    padding: 15,
-    borderRadius: 10,
+    backgroundColor: '#F9FAFB',
+    borderRadius: 12,
+    padding: 16,
     marginBottom: 12,
-    borderLeftWidth: 4,
-    borderLeftColor: '#FF6B35',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
   },
-  mechanicHeader: {
+  cardHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
-    marginBottom: 8,
   },
-  mechanicInfo: {
+  cardLeft: {
     flex: 1,
+    gap: 6,
   },
   mechanicName: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: '600',
-    color: '#333',
-    marginBottom: 4,
-  },
-  ratingRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  rating: {
-    fontSize: 14,
-    color: '#666',
-  },
-  availableBadge: {
-    fontSize: 12,
-    color: '#4CAF50',
-    fontWeight: '600',
-  },
-  specialtiesContainer: {
-    marginBottom: 8,
-  },
-  specialtiesLabel: {
-    fontSize: 12,
-    color: '#999',
+    color: '#1F2937',
     marginBottom: 2,
   },
-  specialtiesText: {
-    fontSize: 14,
-    color: '#666',
+  starRating: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
   },
-  distanceRow: {
-    marginBottom: 10,
+  ratingValue: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#6B7280',
+    marginLeft: 6,
+  },
+  distanceBadge: {
+    backgroundColor: '#c7dde4ff',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
   },
   distanceText: {
-    fontSize: 14,
-    color: '#FF6B35',
+    fontSize: 12,
     fontWeight: '600',
+    color: '#0A4D4D',
   },
-  callButton: {
-    backgroundColor: '#4CAF50',
-    padding: 12,
-    borderRadius: 8,
+  emptyState: {
+    padding: 40,
     alignItems: 'center',
-  },
-  callButtonText: {
-    color: '#fff',
-    fontWeight: '600',
-    fontSize: 15,
+    gap: 12,
   },
   emptyText: {
+    fontSize: 14,
+    color: '#9CA3AF',
     textAlign: 'center',
-    color: '#999',
-    fontStyle: 'italic',
-    padding: 20,
   },
-  buttonRow: {
+  modalOverlay: {
+    flex: 1,
+    justifyContent: 'flex-end',
+  },
+  modalBackdrop: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.4)',
+  },
+  modalContent: {
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 24,
+    paddingBottom: 40,
+    maxHeight: '75%',
+  },
+  modalHandle: {
+    width: 40,
+    height: 4,
+    backgroundColor: '#E5E7EB',
+    borderRadius: 2,
+    alignSelf: 'center',
+    marginBottom: 20,
+  },
+  modalHeader: {
     flexDirection: 'row',
-    gap: 10,
-    marginTop: 10,
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 16,
+  },
+  modalTitle: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: '#1F2937',
+    marginBottom: 8,
+  },
+  modalRating: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+  },
+  modalRatingText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#6B7280',
+    marginLeft: 6,
+  },
+  closeButton: {
+    padding: 4,
+  },
+  modalDistance: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    backgroundColor: '#F9FAFB',
+    borderRadius: 12,
+    marginBottom: 24,
+  },
+  modalDistanceText: {
+    fontSize: 14,
+    color: '#6B7280',
+    fontWeight: '500',
+  },
+  modalActions: {
+    gap: 6,
   },
   actionButton: {
-    flex: 1,
-    padding: 12,
-    borderRadius: 8,
+    flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 16,
+    borderRadius: 12,
+    gap: 10,
+  },
+  callButton: {
+    backgroundColor: '#001f3f',
+  },
+  callButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  walletButton: {
+    backgroundColor: '#e0ebf2ff',
+    borderWidth: 1,
+    borderColor: '#84b1d6ff',
+  },
+  walletButtonText: {
+    color: '#0A4D4D',
+    fontSize: 16,
+    fontWeight: '600',
   },
   reviewButton: {
-    backgroundColor: '#FF9500',
+    backgroundColor: '#F9FAFB',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
   },
   reviewButtonText: {
-    color: '#fff',
+    color: '#6B7280',
+    fontSize: 16,
     fontWeight: '600',
-    fontSize: 15,
   },
-  payButton: {
-    backgroundColor: '#007AFF',
-  },
-  payButtonText: {
-    color: '#fff',
-    fontWeight: '600',
-    fontSize: 15,
-  },
-
 });
 
 MechanicFinder.displayName = 'MechanicFinder';
