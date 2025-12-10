@@ -12,6 +12,8 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import dbManager from '../utils/database';
+import syncManager from '../utils/SyncManager';
 import authService from './authService';
 
 const ReviewMechanicScreen = ({ route, navigation }) => {
@@ -29,27 +31,120 @@ const ReviewMechanicScreen = ({ route, navigation }) => {
 
     setLoading(true);
 
-    const result = await authService.createReview(
-      mechanicId,
+    const reviewId = `rev_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const reviewData = {
+      id: reviewId,
+      mechanic_id: mechanicId,
+      mechanic_name: mechanicName,
       rating,
-      comment.trim(),
-      callDuration
-    );
+      comment: comment.trim(),
+      call_duration: callDuration,
+      timestamp: Date.now(),
+      synced: 0
+    };
 
-    setLoading(false);
+    try {
+      // 1. Save to local database first
+      const db = await dbManager.getDatabase();
+      await db.runAsync(
+        `INSERT INTO reviews (id, mechanic_id, mechanic_name, rating, comment, call_duration, timestamp, synced)
+         VALUES (?, ?, ?, ?, ?, ?, ?, 0)`,
+        [
+          reviewData.id,
+          reviewData.mechanic_id,
+          reviewData.mechanic_name,
+          reviewData.rating,
+          reviewData.comment,
+          reviewData.call_duration,
+          reviewData.timestamp
+        ]
+      );
+      console.log('💾 Review saved locally:', reviewId);
 
-    if (result.success) {
-      Alert.alert('Success', 'Thank you for your review!', [
-        {
-          text: 'OK',
-          onPress: () => {
-            // Navigate back with refresh flag to trigger mechanic list reload
-            navigation.navigate('Home', { refreshMechanics: true });
-          }
+      // 2. Try to sync review if online
+      try {
+        // Wait for SyncManager to be ready
+        await syncManager.waitForInit();
+
+        // Check if we're online
+        const isOnline = await syncManager.checkNetworkStatus();
+
+        if (!isOnline) {
+          console.log('📴 Offline mode: review saved for later sync');
+          Alert.alert(
+            'Saved Offline',
+            'Review saved locally. Will sync when online.',
+            [
+              {
+                text: 'OK',
+                onPress: () => {
+                  navigation.navigate('Home', { refreshMechanics: true });
+                }
+              }
+            ]
+          );
+          return;
         }
-      ]);
-    } else {
-      Alert.alert('Error', result.error || 'Failed to submit review');
+
+        console.log('📡 Online - syncing review...');
+
+        const result = await authService.createReview(
+          mechanicId,
+          rating,
+          comment.trim(),
+          callDuration
+        );
+
+        if (result.success) {
+          // Update local DB as synced
+          await db.runAsync(
+            'UPDATE reviews SET synced = 1 WHERE id = ?',
+            [reviewId]
+          );
+
+          Alert.alert('Success', 'Thank you for your review!', [
+            {
+              text: 'OK',
+              onPress: () => {
+                navigation.navigate('Home', { refreshMechanics: true });
+              }
+            }
+          ]);
+        } else {
+          throw new Error(result.error || 'Failed to submit review');
+        }
+      } catch (networkError) {
+        // Network error during sync - review already saved locally
+        console.log('📴 Network error during review sync:', networkError.message);
+        Alert.alert(
+          'Saved Offline',
+          'Review saved locally. Will sync when online.',
+          [
+            {
+              text: 'OK',
+              onPress: () => {
+                navigation.navigate('Home', { refreshMechanics: true });
+              }
+            }
+          ]
+        );
+      }
+    } catch (error) {
+      console.error('❌ Review error:', error);
+
+      // Check network status to provide appropriate error message
+      const isOnline = await syncManager.checkNetworkStatus();
+
+      if (isOnline) {
+        Alert.alert('Error', `Failed to submit review: ${error.message}. It has been saved and we will retry later.`);
+      } else {
+        Alert.alert('Saved Offline', 'Review saved locally. Will sync when online.');
+      }
+
+      // Navigate back anyway since it's saved locally
+      navigation.navigate('Home', { refreshMechanics: true });
+    } finally {
+      setLoading(false);
     }
   };
 

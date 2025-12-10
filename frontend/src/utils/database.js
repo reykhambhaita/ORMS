@@ -1,10 +1,7 @@
 // src/utils/database.js
 import * as SQLite from 'expo-sqlite';
 
-/**
- * Centralized database manager to prevent conflicts
- * when multiple components access the same database
- */
+
 class DatabaseManager {
   constructor() {
     this.db = null;
@@ -121,6 +118,39 @@ class DatabaseManager {
         synced INTEGER DEFAULT 1
       );
       CREATE INDEX IF NOT EXISTS idx_mechanics_location ON mechanics(latitude, longitude);
+    `);
+
+    // Payments table
+    await this.db.execAsync(`
+      CREATE TABLE IF NOT EXISTS payments (
+        id TEXT PRIMARY KEY,
+        mechanic_id TEXT NOT NULL,
+        mechanic_name TEXT,
+        amount REAL NOT NULL,
+        description TEXT,
+        status TEXT,
+        timestamp INTEGER NOT NULL,
+        synced INTEGER DEFAULT 0,
+        provider_ref TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_payments_timestamp ON payments(timestamp);
+      CREATE INDEX IF NOT EXISTS idx_payments_synced ON payments(synced);
+    `);
+
+    // Reviews table
+    await this.db.execAsync(`
+      CREATE TABLE IF NOT EXISTS reviews (
+        id TEXT PRIMARY KEY,
+        mechanic_id TEXT NOT NULL,
+        mechanic_name TEXT,
+        rating INTEGER NOT NULL,
+        comment TEXT,
+        call_duration INTEGER,
+        timestamp INTEGER NOT NULL,
+        synced INTEGER DEFAULT 0
+      );
+      CREATE INDEX IF NOT EXISTS idx_reviews_timestamp ON reviews(timestamp);
+      CREATE INDEX IF NOT EXISTS idx_reviews_synced ON reviews(synced);
     `);
 
     // Verified addresses table for user feedback

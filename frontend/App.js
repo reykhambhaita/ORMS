@@ -12,26 +12,33 @@ import ReviewMechanicScreen from './src/screens/ReviewMechanicScreen';
 import RoleSelectionScreen from './src/screens/RoleSelectionScreen';
 import SignupScreen from './src/screens/SignupScreen';
 import authService from './src/screens/authService';
+import syncManager from './src/utils/SyncManager';
 import config from './tamagui.config';
+
 const Stack = createNativeStackNavigator();
 
 export default function App() {
   const [userName, setUserName] = useState('Welcome');
 
   useEffect(() => {
-    // Fetch user data when app loads
-    const fetchUserData = async () => {
+    // Initialize SyncManager and fetch user data
+    const initializeApp = async () => {
       try {
+        // Wait for SyncManager to initialize (ensures network status is known)
+        await syncManager.init();
+        console.log('✅ SyncManager initialized');
+
+        // Fetch user data
         const result = await authService.getCurrentUser();
         if (result.success && result.user) {
           setUserName(result.user.username || 'Welcome');
         }
       } catch (error) {
-        console.error('Failed to fetch user data:', error);
+        console.error('Failed to initialize app:', error);
       }
     };
 
-    fetchUserData();
+    initializeApp();
   }, []);
 
   return (

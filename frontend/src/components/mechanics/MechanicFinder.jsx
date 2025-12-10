@@ -16,7 +16,6 @@ import {
 import authService from '../../screens/authService.js';
 import dbManager from '../../utils/database';
 
-
 const MechanicFinder = forwardRef(({ searchLocation, searchLocationName, onResetToGPS, onMechanicsUpdate, navigation }, ref) => {
   const [loading, setLoading] = useState(false);
   const [mechanics, setMechanics] = useState([]);
@@ -27,7 +26,7 @@ const MechanicFinder = forwardRef(({ searchLocation, searchLocationName, onReset
     if (searchLocation?.latitude && searchLocation?.longitude) {
       loadMechanics();
     }
-  }, [searchLocation?.latitude, searchLocation?.longitude]);
+  }, [searchLocation]);
 
   const loadMechanics = async () => {
     if (!searchLocation?.latitude || !searchLocation?.longitude) return;
@@ -35,134 +34,183 @@ const MechanicFinder = forwardRef(({ searchLocation, searchLocationName, onReset
     setLoading(true);
 
     try {
-      console.log('Loading mechanics from location:', {
+      console.log('🔧 Loading mechanics from location:', {
         lat: searchLocation.latitude,
         lng: searchLocation.longitude,
         name: searchLocationName || 'GPS'
       });
 
+      // STEP 1: Always load from cache first (offline-first principle)
+      console.log('📦 [CACHE] Loading mechanics from local SQLite cache...');
       const cached = await getCachedMechanics(
         searchLocation.latitude,
-        searchLocation.longitude
+        searchLocation.longitude,
+        100 // 100km radius for testing
       );
-
-      console.log('Cached mechanics:', cached.length);
 
       if (cached.length > 0) {
-        const mechanicsWithDistance = cached.map(mechanic => {
-          const distance = calculateDistance(
-            searchLocation.latitude,
-            searchLocation.longitude,
-            mechanic.latitude,
-            mechanic.longitude
-          );
-
-          return {
-            ...mechanic,
-            distanceFromUser: distance
-          };
-        }).filter(m => m.distanceFromUser !== null);
-
-        mechanicsWithDistance.sort((a, b) => a.distanceFromUser - b.distanceFromUser);
-
-        setMechanics(mechanicsWithDistance);
-        if (onMechanicsUpdate) {
-          onMechanicsUpdate(mechanicsWithDistance);
-        }
+        console.log(`✅ [CACHE HIT] Found ${cached.length} cached mechanics`);
+        cached.forEach((m, i) => {
+          console.log(`   ${i + 1}. ${m.name} (cached at ${new Date(m.timestamp).toLocaleString()})`);
+        });
+      } else {
+        console.log('❌ [CACHE MISS] No mechanics found in local cache');
       }
 
-      const result = await authService.getNearbyMechanics(
-        searchLocation.latitude,
-        searchLocation.longitude,
-        50000
-      );
-
-      console.log('Backend result:', result);
-
-      if (result.success && result.data) {
-        console.log('Found mechanics:', result.data.length);
-
-        await cacheMechanics(result.data);
-
-        const mechanicsWithDistance = result.data.map(mechanic => {
-          const lat = mechanic.location?.latitude || mechanic.latitude;
-          const lng = mechanic.location?.longitude || mechanic.longitude;
-
-          console.log(`Mechanic "${mechanic.name}": lat=${lat}, lng=${lng}`);
-
-          const distance = calculateDistance(
-            searchLocation.latitude,
-            searchLocation.longitude,
-            lat,
-            lng
-          );
-
-          return {
+      // Calculate distances and display cached results immediately
+      if (cached.length > 0) {
+        const mechanicsWithDistance = cached
+          .map(mechanic => ({
             ...mechanic,
-            latitude: lat,
-            longitude: lng,
-            distanceFromUser: distance
-          };
-        }).filter(m => m.distanceFromUser !== null);
+            dataSource: 'cache', // Mark as cached data
+            distanceFromUser: calculateDistance(
+              searchLocation.latitude,
+              searchLocation.longitude,
+              mechanic.latitude,
+              mechanic.longitude
+            )
+          }))
+          .filter(m => m.distanceFromUser !== null)
+          .sort((a, b) => a.distanceFromUser - b.distanceFromUser);
 
-        mechanicsWithDistance.sort((a, b) => a.distanceFromUser - b.distanceFromUser);
-
-        console.log('Sorted mechanics by distance:', mechanicsWithDistance.map(m => ({
-          name: m.name,
-          distance: m.distanceFromUser?.toFixed(2) + 'km'
-        })));
-
+        console.log('📱 [DISPLAY] Showing cached mechanics to user');
         setMechanics(mechanicsWithDistance);
         if (onMechanicsUpdate) {
           onMechanicsUpdate(mechanicsWithDistance);
         }
       } else {
-        console.log('Failed to load mechanics:', result.error);
+        // No cached data
+        console.log('📱 [DISPLAY] No mechanics to display (cache empty)');
+        setMechanics([]);
+        if (onMechanicsUpdate) {
+          onMechanicsUpdate([]);
+        }
       }
-    } catch (error) {
-      console.error('Load mechanics error:', error);
 
-      const cached = await getCachedMechanics(
-        searchLocation.latitude,
-        searchLocation.longitude
-      );
+      // Stop loading spinner immediately
+      setLoading(false);
 
-      const mechanicsWithDistance = cached.map(mechanic => ({
-        ...mechanic,
-        distanceFromUser: calculateDistance(
+      // STEP 2: Try background refresh from backend (don't block UI)
+      try {
+        console.log('🌐 [BACKEND] Attempting to fetch fresh data from backend...');
+        const result = await authService.getNearbyMechanics(
           searchLocation.latitude,
           searchLocation.longitude,
-          mechanic.latitude,
-          mechanic.longitude
-        )
-      })).filter(m => m.distanceFromUser !== null);
+          100000 // 100km in meters for testing
+        );
 
-      mechanicsWithDistance.sort((a, b) => a.distanceFromUser - b.distanceFromUser);
+        if (result.success && result.data && result.data.length > 0) {
+          console.log(`✅ [BACKEND SUCCESS] Received ${result.data.length} mechanics from server`);
+          result.data.forEach((m, i) => {
+            console.log(`   ${i + 1}. ${m.name} (from backend)`);
+          });
 
-      setMechanics(mechanicsWithDistance);
-      if (onMechanicsUpdate) {
-        onMechanicsUpdate(mechanicsWithDistance);
+          // Cache the fresh data
+          console.log('💾 [CACHE UPDATE] Saving fresh data to local cache...');
+          await cacheMechanics(result.data);
+          console.log('✅ [CACHE UPDATE] Successfully cached backend data');
+
+          // Update UI with fresh data
+          const mechanicsWithDistance = result.data
+            .map(mechanic => {
+              const lat = mechanic.location?.latitude || mechanic.latitude;
+              const lng = mechanic.location?.longitude || mechanic.longitude;
+
+              return {
+                ...mechanic,
+                dataSource: 'backend', // Mark as fresh backend data
+                latitude: lat,
+                longitude: lng,
+                distanceFromUser: calculateDistance(
+                  searchLocation.latitude,
+                  searchLocation.longitude,
+                  lat,
+                  lng
+                )
+              };
+            })
+            .filter(m => m.distanceFromUser !== null)
+            .sort((a, b) => a.distanceFromUser - b.distanceFromUser);
+
+          console.log('📱 [DISPLAY] Updating UI with fresh backend data');
+          setMechanics(mechanicsWithDistance);
+          if (onMechanicsUpdate) {
+            onMechanicsUpdate(mechanicsWithDistance);
+          }
+        } else if (result.data && result.data.length === 0) {
+          console.log('ℹ️  [BACKEND] Backend returned 0 mechanics');
+          if (cached.length > 0) {
+            console.log('📱 [DISPLAY] Keeping cached data displayed');
+          } else {
+            console.log('📱 [DISPLAY] No mechanics available (backend empty, cache empty)');
+          }
+        } else {
+          console.log('⚠️  [BACKEND] Backend request failed:', result.error || 'Unknown error');
+          console.log('📱 [DISPLAY] Continuing to show cached data');
+        }
+      } catch (networkError) {
+        // Network error - this is OK in offline-first architecture
+        console.log('❌ [BACKEND ERROR] Network request failed:', networkError.message);
+        console.log('📴 [OFFLINE MODE] App is offline or backend unreachable');
+        if (cached.length > 0) {
+          console.log('✅ [OFFLINE MODE] Displaying cached mechanics (offline-first working!)');
+        } else {
+          console.log('⚠️  [OFFLINE MODE] No cached data available');
+        }
       }
-    } finally {
+
+    } catch (error) {
+      console.error('❌ [ERROR] Load mechanics error:', error);
+      console.log('🔄 [FALLBACK] Attempting to load from cache as fallback...');
       setLoading(false);
+
+      try {
+        const cached = await getCachedMechanics(
+          searchLocation.latitude,
+          searchLocation.longitude,
+          100
+        );
+
+        if (cached.length > 0) {
+          console.log(`✅ [FALLBACK SUCCESS] Loaded ${cached.length} mechanics from cache`);
+          const mechanicsWithDistance = cached
+            .map(mechanic => ({
+              ...mechanic,
+              dataSource: 'cache-fallback', // Mark as fallback cached data
+              distanceFromUser: calculateDistance(
+                searchLocation.latitude,
+                searchLocation.longitude,
+                mechanic.latitude,
+                mechanic.longitude
+              )
+            }))
+            .filter(m => m.distanceFromUser !== null)
+            .sort((a, b) => a.distanceFromUser - b.distanceFromUser);
+
+          console.log('📱 [DISPLAY] Showing fallback cached data');
+          setMechanics(mechanicsWithDistance);
+          if (onMechanicsUpdate) {
+            onMechanicsUpdate(mechanicsWithDistance);
+          }
+        } else {
+          console.log('❌ [FALLBACK FAILED] No cached data available');
+        }
+      } catch (cacheError) {
+        console.error('❌ [FALLBACK ERROR] Failed to load cached mechanics:', cacheError);
+      }
     }
   };
 
+
   useImperativeHandle(ref, () => ({
     refreshMechanics: async () => {
-      console.log('Refreshing mechanics list...');
+      console.log('🔄 Refreshing mechanics list...');
       if (searchLocation?.latitude && searchLocation?.longitude) {
-        try {
-          const db = await dbManager.getDatabase();
-          await db.runAsync('DELETE FROM mechanics;');
-          console.log('Cleared mechanic cache');
-        } catch (error) {
-          console.error('Failed to clear mechanic cache:', error);
-        }
         await loadMechanics();
       }
     }
   }));
+
 
   const calculateDistance = (lat1, lon1, lat2, lon2) => {
     if (!lat1 || !lon1 || !lat2 || !lon2) {
@@ -171,7 +219,6 @@ const MechanicFinder = forwardRef(({ searchLocation, searchLocationName, onReset
     }
 
     if (lat1 === lat2 && lon1 === lon2) {
-      console.log('Same location - distance is 0km');
       return 0;
     }
 
@@ -189,18 +236,17 @@ const MechanicFinder = forwardRef(({ searchLocation, searchLocationName, onReset
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     const distance = R * c;
 
-    console.log(`Distance: ${distance.toFixed(2)}km`);
-    console.log(`  From: (${lat1.toFixed(6)}, ${lon1.toFixed(6)})`);
-    console.log(`  To:   (${lat2.toFixed(6)}, ${lon2.toFixed(6)})`);
-
     return distance;
   };
 
-  const getCachedMechanics = async (latitude, longitude) => {
+  const getCachedMechanics = async (latitude, longitude, radiusKm = 100) => {
     try {
+      console.log(`🗄️  [CACHE READ] Querying SQLite for mechanics within ${radiusKm}km...`);
       const db = await dbManager.getDatabase();
-      const latDelta = 50 / 111.32;
-      const lngDelta = 50 / (111.32 * Math.cos(latitude * Math.PI / 180));
+      const latDelta = radiusKm / 111.32;
+      const lngDelta = radiusKm / (111.32 * Math.cos(latitude * Math.PI / 180));
+
+      console.log(`🗄️  [CACHE READ] Search bounds: lat [${(latitude - latDelta).toFixed(4)}, ${(latitude + latDelta).toFixed(4)}], lng [${(longitude - lngDelta).toFixed(4)}, ${(longitude + lngDelta).toFixed(4)}]`);
 
       const result = await db.getAllAsync(
         `SELECT * FROM mechanics
@@ -215,29 +261,44 @@ const MechanicFinder = forwardRef(({ searchLocation, searchLocationName, onReset
         ]
       );
 
-      return (result || []).map(m => ({
+      console.log(`🗄️  [CACHE READ] SQLite query returned ${result?.length || 0} rows`);
+
+      const mechanics = (result || []).map(m => ({
         ...m,
         specialties: JSON.parse(m.specialties || '[]'),
         available: m.available === 1
       }));
+
+      return mechanics;
     } catch (error) {
-      console.error('Get cached mechanics error:', error);
+      console.error('❌ [CACHE READ ERROR] Get cached mechanics error:', error);
       return [];
     }
   };
 
   const cacheMechanics = async (mechanics) => {
-    if (!mechanics || mechanics.length === 0) return;
+    if (!mechanics || mechanics.length === 0) {
+      console.log('⚠️  [CACHE WRITE] No mechanics to cache (empty array)');
+      return;
+    }
 
     try {
+      console.log(`💾 [CACHE WRITE] Starting to cache ${mechanics.length} mechanics to SQLite...`);
       const db = await dbManager.getDatabase();
       const now = Date.now();
+      let successCount = 0;
+      let skipCount = 0;
+
       for (const mechanic of mechanics) {
         const id = mechanic._id || mechanic.id;
         const lat = mechanic.location?.latitude || mechanic.latitude;
         const lng = mechanic.location?.longitude || mechanic.longitude;
 
-        if (!id || !lat || !lng) continue;
+        if (!id || !lat || !lng) {
+          console.warn(`⚠️  [CACHE WRITE] Skipping mechanic "${mechanic.name}" - missing id or coordinates`);
+          skipCount++;
+          continue;
+        }
 
         await db.runAsync(
           `INSERT OR REPLACE INTO mechanics
@@ -255,9 +316,12 @@ const MechanicFinder = forwardRef(({ searchLocation, searchLocationName, onReset
             now
           ]
         );
+        successCount++;
       }
+
+      console.log(`✅ [CACHE WRITE] Successfully cached ${successCount} mechanics${skipCount > 0 ? `, skipped ${skipCount}` : ''}`);
     } catch (error) {
-      console.error('Cache mechanics error:', error);
+      console.error('❌ [CACHE WRITE ERROR] Cache mechanics error:', error);
     }
   };
 
@@ -351,9 +415,18 @@ const MechanicFinder = forwardRef(({ searchLocation, searchLocationName, onReset
               : 'Find Mechanics'}
           </Text>
           {searchLocationName && (
-            <View style={styles.searchLocationBadge}>
-              <Ionicons name="location" size={12} color="#0A4D4D" />
-              <Text style={styles.searchLocationText}>{searchLocationName}</Text>
+            <View style={styles.searchLocationRow}>
+              <View style={styles.searchLocationBadge}>
+                <Ionicons name="location" size={12} color="#0A4D4D" />
+                <Text style={styles.searchLocationText}>{searchLocationName}</Text>
+              </View>
+              <TouchableOpacity
+                style={styles.resetButton}
+                onPress={onResetToGPS}
+              >
+                <Ionicons name="navigate" size={14} color="#0A4D4D" />
+                <Text style={styles.resetButtonText}>My Location</Text>
+              </TouchableOpacity>
             </View>
           )}
         </View>
@@ -525,7 +598,6 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     padding: 20,
     marginBottom: 16,
-
   },
   containerHeader: {
     marginBottom: 16,
@@ -536,16 +608,36 @@ const styles = StyleSheet.create({
     color: '#1F2937',
     marginBottom: 4,
   },
+  searchLocationRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 8,
+  },
   searchLocationBadge: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    marginTop: 4,
+    flex: 1,
   },
   searchLocationText: {
     fontSize: 12,
     color: '#0A4D4D',
     fontWeight: '500',
+  },
+  resetButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#E0EBF2',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  resetButtonText: {
+    fontSize: 11,
+    color: '#0A4D4D',
+    fontWeight: '600',
   },
   loader: {
     marginVertical: 20,

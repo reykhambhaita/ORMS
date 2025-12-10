@@ -8,6 +8,7 @@ import MultiModalLocationTracker from '../components/location/MultiModalLocation
 import OfflineMapView from '../components/map/OfflineMapView';
 import MechanicFinder from '../components/mechanics/MechanicFinder';
 import authService from './authService';
+
 const HomeScreen = ({ navigation, route }) => {
   const [currentLocation, setCurrentLocation] = useState(null);
   const [landmarks, setLandmarks] = useState([]);
@@ -75,9 +76,11 @@ const HomeScreen = ({ navigation, route }) => {
   }, [navigation, user, locationTrackerRef.current?.currentLocation]);
 
   const handleLocationUpdate = (location) => {
+    console.log('ðŸ“ HomeScreen: Location updated:', location);
     setCurrentLocation(location);
     // Auto-update search location to GPS if no landmark is selected
     if (!searchLocationName) {
+      console.log('ðŸ“ HomeScreen: Setting search location to GPS location');
       setSearchLocation(location);
     }
   };
@@ -95,11 +98,13 @@ const HomeScreen = ({ navigation, route }) => {
       latitude: landmark.latitude,
       longitude: landmark.longitude,
     };
+    console.log('ðŸ›ï¸ Landmark selected:', landmark.name);
     setSearchLocation(landmarkLocation);
     setSearchLocationName(landmark.name);
   };
 
   const handleResetToGPS = () => {
+    console.log('ðŸ§­ Resetting to GPS location');
     setSearchLocation(currentLocation);
     setSearchLocationName(null);
   };
@@ -107,14 +112,14 @@ const HomeScreen = ({ navigation, route }) => {
   // Handle refresh when returning from review screen
   useEffect(() => {
     if (route?.params?.refreshMechanics && mechanicFinderRef.current) {
-      console.log('Refreshing mechanics after review submission');
+      console.log('ðŸ”„ Refreshing mechanics after review submission');
       mechanicFinderRef.current.refreshMechanics();
       // Clear the parameter to avoid repeated refreshes
       navigation.setParams({ refreshMechanics: false });
     }
   }, [route?.params?.refreshMechanics]);
 
-  // Refresh user data when screen comes into focus (e.g., after updating profile)
+  // Refresh user data when screen comes into focus
   useEffect(() => {
     const unsubscribe = navigation.addListener('focus', async () => {
       const userData = await authService.getUser();
