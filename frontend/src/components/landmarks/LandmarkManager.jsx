@@ -1,7 +1,7 @@
 // src/components/landmarks/LandmarkManager.jsx
 import { Ionicons } from '@expo/vector-icons';
 import NetInfo from "@react-native-community/netinfo";
-import { useEffect, useState } from 'react';
+import { forwardRef, useEffect, useImperativeHandle, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -34,14 +34,13 @@ const CATEGORIES = [
   { value: 'other', label: 'Other' },
 ];
 
-const LandmarkManager = ({ currentLocation, onLandmarksUpdate, onLandmarkClick }) => {
+const LandmarkManager = forwardRef(({ currentLocation, onLandmarksUpdate, onLandmarkClick, searchQuery }, ref) => {
   const [listModalVisible, setListModalVisible] = useState(false);
   const [addModalVisible, setAddModalVisible] = useState(false);
   const [loading, setLoading] = useState(false);
   const [currentUserId, setCurrentUserId] = useState(null);
   const [isOnline, setIsOnline] = useState(true);
   const [previousOnlineState, setPreviousOnlineState] = useState(true);
-  const [searchQuery, setSearchQuery] = useState('');
   const [syncing, setSyncing] = useState(false);
 
   const [name, setName] = useState('');
@@ -50,6 +49,11 @@ const LandmarkManager = ({ currentLocation, onLandmarksUpdate, onLandmarkClick }
   const [categoryDropdownVisible, setCategoryDropdownVisible] = useState(false);
   const [nearbyLandmarks, setNearbyLandmarks] = useState([]);
   const [dbReady, setDbReady] = useState(false);
+
+  useImperativeHandle(ref, () => ({
+    openLandmarkList: () => setListModalVisible(true),
+    openAddLandmark: () => setAddModalVisible(true)
+  }));
 
   // Drag gesture state
   const translateY = useSharedValue(0);
@@ -555,28 +559,10 @@ const LandmarkManager = ({ currentLocation, onLandmarksUpdate, onLandmarkClick }
 
   return (
     <>
-      {/* Compact Header */}
-      <TouchableOpacity
-        style={styles.compactHeader}
-        onPress={() => setListModalVisible(true)}
-      >
-        <Text style={styles.compactTitle}>Recognize landmarks near you that can help?</Text>
-        <Ionicons name="arrow-forward" size={24} color="#000" />
-      </TouchableOpacity>
-
-      {/* Landmarks List Modal */}
-      <Modal
-        visible={listModalVisible}
-        animationType="slide"
-        transparent={true}
-        onRequestClose={closeModal}
-      >
-        <TouchableOpacity
-          style={styles.modalOverlay}
-          activeOpacity={1}
-          onPress={closeModal}
-        >
-          <View style={styles.listModalContent} onStartShouldSetResponder={() => true}>
+      {/* Landmarks List - Non-Modal Overlay */}
+      {listModalVisible && (
+        <View style={styles.nonModalOverlay}>
+          <View style={styles.listModalContent}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Landmarks</Text>
               <View style={styles.headerRight}>
@@ -592,16 +578,7 @@ const LandmarkManager = ({ currentLocation, onLandmarksUpdate, onLandmarkClick }
               </View>
             </View>
 
-            {/* Search Bar */}
-            <View style={styles.searchContainer}>
-              <Ionicons name="search" size={20} color="#666" style={styles.searchIcon} />
-              <TextInput
-                style={styles.searchInput}
-                placeholder="Search landmarks..."
-                value={searchQuery}
-                onChangeText={setSearchQuery}
-              />
-            </View>
+
 
             {/* Add Landmark Button */}
             <TouchableOpacity
@@ -612,7 +589,7 @@ const LandmarkManager = ({ currentLocation, onLandmarksUpdate, onLandmarkClick }
               }}
               disabled={!hasLocation || !dbReady}
             >
-              <Ionicons name="add-circle-outline" size={18} color="#fff" />
+              <Ionicons name="add-circle-outline" size={18} color="#ffffff" />
               <Text style={styles.addButtonText}>Add Landmark</Text>
             </TouchableOpacity>
 
@@ -673,17 +650,17 @@ const LandmarkManager = ({ currentLocation, onLandmarksUpdate, onLandmarkClick }
               </View>
             )}
           </View>
-        </TouchableOpacity>
-      </Modal>
+        </View>
+      )}
 
       {/* Add Landmark Modal */}
       <Modal
         visible={addModalVisible}
-        animationType="slide"
+        animationType="fade"
         transparent={true}
         onRequestClose={() => setAddModalVisible(false)}
       >
-        <View style={styles.modalOverlay}>
+        <View style={styles.addModalOverlay}>
           <View style={styles.modalContent}>
             <Text style={styles.modalTitle}>Add New Landmark</Text>
 
@@ -773,35 +750,58 @@ const LandmarkManager = ({ currentLocation, onLandmarksUpdate, onLandmarkClick }
       </Modal>
     </>
   );
-};
+});
 
 const styles = StyleSheet.create({
   compactHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: '#fff',
-    padding: 15,
-    borderRadius: 8,
-    marginBottom: 0,
+    backgroundColor: '#ffffff',
+    padding: 20,
+    borderRadius: 16,
+    marginBottom: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 10,
+    elevation: 2,
   },
   compactTitle: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#000',
+    color: '#000000',
     flex: 1,
   },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'flex-end',
+  nonModalOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 1000,
+    pointerEvents: 'box-none', // Allow touches through to search bar
   },
   listModalContent: {
     backgroundColor: '#fff',
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     padding: 24,
-    maxHeight: '90%',
+    marginTop: 140,
+    flex: 1, // Take all remaining space
+    marginBottom: 0, // Ensure no gap at bottom
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 10,
+    elevation: 20,
+    pointerEvents: 'auto',
+  },
+  addModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   modalHeader: {
     flexDirection: 'row',
@@ -854,12 +854,16 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#001f3f',
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    borderRadius: 8,
+    backgroundColor: '#111111',
+    paddingVertical: 12,
+    borderRadius: 12,
     marginBottom: 16,
-    gap: 6,
+    gap: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.05,
+    shadowRadius: 10,
+    elevation: 4,
   },
   addButtonText: {
     color: '#fff',
@@ -871,7 +875,7 @@ const styles = StyleSheet.create({
     opacity: 0.6,
   },
   landmarksScrollView: {
-    maxHeight: 400,
+    flex: 1,
   },
   landmarkItem: {
     padding: 12,
@@ -917,13 +921,15 @@ const styles = StyleSheet.create({
   },
   modalContent: {
     backgroundColor: '#fff',
-    borderRadius: 15,
-    padding: 20,
+    borderRadius: 20,
+    padding: 24,
     width: '90%',
-    maxHeight: '80%',
-    alignSelf: 'center',
-    marginTop: 'auto',
-    marginBottom: 'auto',
+    maxWidth: 400,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.1,
+    shadowRadius: 20,
+    elevation: 24,
   },
   inputRow: {
     flexDirection: 'row',
@@ -1015,7 +1021,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#f5f5f5',
   },
   submitButton: {
-    backgroundColor: '#001f3f',
+    backgroundColor: '#111111',
   },
   cancelButtonText: {
     color: '#666',

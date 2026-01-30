@@ -6,13 +6,14 @@ const tokens = createTokens({
   ...config.tokens,
   color: {
     ...config.tokens.color,
-    primary: '#003D52',
-    primaryLight: '#0A2E3C',
-    accent: '#00D9FF',
-    inputBg: '#0D3847',
-    inputBorder: '#1A4A5C',
-    text: '#FFFFFF',
-    textSecondary: '#7A9CA5',
+    primary: '#111111',
+    primaryLight: '#444444',
+    accent: '#111111',
+    inputBg: '#FFFFFF',
+    inputBorder: '#F0F0F0',
+    text: '#111111',
+    textSecondary: '#888888',
+    background: '#FAFAFA',
   },
 });
 

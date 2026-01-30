@@ -78,7 +78,7 @@ const ReviewMechanicScreen = ({ route, navigation }) => {
               {
                 text: 'OK',
                 onPress: () => {
-                  navigation.navigate('Home', { refreshMechanics: true });
+                  navigation.navigate('Main', { refreshMechanics: true });
                 }
               }
             ]
@@ -106,7 +106,7 @@ const ReviewMechanicScreen = ({ route, navigation }) => {
             {
               text: 'OK',
               onPress: () => {
-                navigation.navigate('Home', { refreshMechanics: true });
+                navigation.navigate('Main', { refreshMechanics: true });
               }
             }
           ]);
@@ -123,7 +123,7 @@ const ReviewMechanicScreen = ({ route, navigation }) => {
             {
               text: 'OK',
               onPress: () => {
-                navigation.navigate('Home', { refreshMechanics: true });
+                navigation.navigate('Main', { refreshMechanics: true });
               }
             }
           ]
@@ -142,7 +142,7 @@ const ReviewMechanicScreen = ({ route, navigation }) => {
       }
 
       // Navigate back anyway since it's saved locally
-      navigation.navigate('Home', { refreshMechanics: true });
+      navigation.navigate('Main', { refreshMechanics: true });
     } finally {
       setLoading(false);
     }
@@ -230,7 +230,7 @@ const ReviewMechanicScreen = ({ route, navigation }) => {
             disabled={loading}
           >
             {loading ? (
-              <ActivityIndicator color="#fff" />
+              <ActivityIndicator color="#ffffff" />
             ) : (
               <Text style={styles.submitButtonText}>Submit Review</Text>
             )}
@@ -252,7 +252,7 @@ const ReviewMechanicScreen = ({ route, navigation }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#ffffff',
+    backgroundColor: '#fafafa',
   },
   scrollContent: {
     flexGrow: 1,
@@ -264,38 +264,43 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: 20,
-    fontWeight: '600',
+    fontWeight: '700',
     textAlign: 'center',
     marginBottom: 8,
-    color: '#333',
+    color: '#111111',
   },
   mechanicName: {
     fontSize: 16,
     textAlign: 'center',
     marginBottom: 8,
-    color: '#001f3f',
+    color: '#111111',
     fontWeight: '600',
   },
   callDuration: {
-    fontSize: 12,
+    fontSize: 13,
     textAlign: 'center',
-    marginBottom: 24,
-    color: '#6b7280',
+    marginBottom: 32,
+    color: '#888888',
   },
   ratingContainer: {
-    backgroundColor: '#f8f9fa',
-    padding: 16,
-    borderRadius: 12,
-    marginBottom: 16,
+    backgroundColor: '#ffffff',
+    padding: 24,
+    borderRadius: 20,
+    marginBottom: 20,
     alignItems: 'center',
-    borderLeftWidth: 4,
-    borderLeftColor: '#001f3f',
+    borderWidth: 1,
+    borderColor: '#f0f0f0',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.04,
+    shadowRadius: 10,
+    elevation: 2,
   },
   ratingLabel: {
     fontSize: 14,
     fontWeight: '600',
-    marginBottom: 12,
-    color: '#333',
+    marginBottom: 16,
+    color: '#111111',
   },
   starsRow: {
     flexDirection: 'row',
@@ -307,41 +312,51 @@ const styles = StyleSheet.create({
   },
   ratingText: {
     fontSize: 14,
-    color: '#001f3f',
+    color: '#000000',
     fontWeight: '600',
     marginTop: 8,
   },
   commentContainer: {
-    backgroundColor: '#f8f9fa',
-    padding: 16,
-    borderRadius: 12,
-    marginBottom: 16,
-    borderLeftWidth: 4,
-    borderLeftColor: '#001f3f',
+    backgroundColor: '#ffffff',
+    padding: 24,
+    borderRadius: 20,
+    marginBottom: 24,
+    borderWidth: 1,
+    borderColor: '#f0f0f0',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.04,
+    shadowRadius: 10,
+    elevation: 2,
   },
   commentLabel: {
     fontSize: 14,
     fontWeight: '600',
-    marginBottom: 8,
-    color: '#333',
+    marginBottom: 12,
+    color: '#111111',
   },
   commentInput: {
-    backgroundColor: '#ffffff',
-    padding: 12,
-    borderRadius: 8,
+    backgroundColor: '#fafafa',
+    padding: 16,
+    borderRadius: 12,
     fontSize: 14,
-    minHeight: 90,
+    minHeight: 120,
     borderWidth: 1,
-    borderColor: '#e0e0e0',
-    color: '#333',
+    borderColor: '#f0f0f0',
+    color: '#111111',
   },
   submitButton: {
-    backgroundColor: '#001f3f',
-    height: 48,
-    borderRadius: 24,
+    backgroundColor: '#111111',
+    height: 56,
+    borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.05,
+    shadowRadius: 10,
+    elevation: 4,
   },
   buttonDisabled: {
     backgroundColor: '#999',

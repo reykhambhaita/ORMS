@@ -1,212 +1,306 @@
-// src/components/map/OfflineMapView.jsx
 import { Ionicons } from '@expo/vector-icons';
-import * as MapLibreGL from '@maplibre/maplibre-react-native';
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
-MapLibreGL.setConnected(true);
-
-const OfflineMapView = ({ currentLocation, landmarks = [], mechanics = [] }) => {
-  const centerCoordinate = currentLocation?.latitude && currentLocation?.longitude
-    ? [currentLocation.longitude, currentLocation.latitude]
-    : null;
+const OfflineMapView = ({ currentLocation, landmarks = [], mechanics = [], navigation, isFullScreen }) => {
+  const handleMechanicClick = (mechanic) => {
+    if (navigation) {
+      console.log('🗺️ Map: Navigating to Main with mechanicId', mechanic.id || mechanic._id);
+      navigation.navigate('Main', { mechanicId: mechanic.id || mechanic._id });
+    }
+  };
 
   return (
-    <View style={styles.container}>
-      <MapLibreGL.MapView
-        style={styles.map}
-        mapStyle={require('../../../assets/maps/streets-v4-style.json')}
-        compassEnabled={true}
-        logoEnabled={false}
-        scaleBarEnabled={true}
-      >
-        <MapLibreGL.Camera
-          zoomLevel={14}
-          centerCoordinate={centerCoordinate || [0, 0]}
-          animationMode="flyTo"
-          animationDuration={1000}
-        />
+    <View style={[styles.container, isFullScreen && styles.fullScreenContainer]}>
+      {!isFullScreen && (
+        <View style={styles.mapHeader}>
+          <Ionicons name="map-outline" size={20} color="#111111" />
+          <Text style={styles.title}>Live Mechanics Map</Text>
+        </View>
+      )}
 
-        <MapLibreGL.UserLocation
-          visible={true}
-          showsUserHeadingIndicator={true}
-        />
+      <View style={styles.mapArea}>
+        {/* Simulated Map Background */}
+        <View style={styles.mapGrid}>
+          {[...Array(40)].map((_, i) => (
+            <View key={i} style={styles.gridLine} />
+          ))}
+        </View>
 
-        {/* User Location Marker */}
-        {currentLocation?.latitude && currentLocation?.longitude && (
-          <MapLibreGL.PointAnnotation
-            id="user-location"
-            coordinate={[currentLocation.longitude, currentLocation.latitude]}
-          >
-            <View style={styles.userMarker}>
-              <View style={styles.userMarkerInner} />
-            </View>
-          </MapLibreGL.PointAnnotation>
+        {/* Current Location Marker */}
+        {currentLocation && (
+          <View style={[styles.marker, styles.userMarker, {
+            left: '50%',
+            top: '50%',
+            transform: [{ translateX: -10 }, { translateY: -10 }]
+          }]}>
+            <View style={styles.userPulse} />
+            <View style={styles.userDot} />
+          </View>
         )}
 
-        {/* Landmark Markers with Names */}
-        {landmarks.map((landmark, index) => {
-          const lng = landmark.longitude || landmark.location?.longitude;
-          const lat = landmark.latitude || landmark.location?.latitude;
-          const name = landmark.name || 'Landmark';
-
-          if (!lng || !lat) return null;
+        {/* Landmarks (Context Clues) Overlays */}
+        {landmarks.slice(0, 8).map((landmark, index) => {
+          // Spread landmarks more widely for full-screen
+          const left = 10 + (index * 12) % 80;
+          const top = 15 + (index * 18) % 70;
 
           return (
-            <MapLibreGL.PointAnnotation
-              key={`landmark-${landmark.id || landmark._id || index}`}
-              id={`landmark-${landmark.id || landmark._id || index}`}
-              coordinate={[lng, lat]}
-              anchor={{ x: 0.5, y: 1 }}
+            <View
+              key={landmark.id || index}
+              style={[styles.landmarkMarker, { left: `${left}%`, top: `${top}%` }]}
             >
-              <View style={styles.landmarkContainer}>
-                <View style={styles.landmarkDot} />
-                <View style={styles.labelContainer}>
-                  <Text style={styles.labelText} numberOfLines={1}>
-                    {name}
-                  </Text>
-                </View>
+              <View style={styles.landmarkDot} />
+              <View style={styles.landmarkLabelContainer}>
+                <Text style={styles.landmarkLabel}>{landmark.name}</Text>
               </View>
-            </MapLibreGL.PointAnnotation>
+            </View>
           );
         })}
 
-        {/* Mechanic Markers with Names */}
-        {mechanics.map((mechanic, index) => {
-          const lng = mechanic.longitude || mechanic.location?.longitude;
-          const lat = mechanic.latitude || mechanic.location?.latitude;
-          const name = mechanic.name || 'Mechanic';
-
-          if (!lng || !lat) return null;
+        {/* Mechanic Tooltips */}
+        {mechanics.slice(0, 5).map((mechanic, index) => {
+          // Semi-random positioning for demo purposes
+          const left = 20 + (index * 18) % 65;
+          const top = 40 + (index * 14) % 55;
 
           return (
-            <MapLibreGL.PointAnnotation
-              key={`mechanic-${mechanic.id || mechanic._id || index}`}
-              id={`mechanic-${mechanic.id || mechanic._id || index}`}
-              coordinate={[lng, lat]}
-              anchor={{ x: 0.5, y: 1 }}
+            <TouchableOpacity
+              key={mechanic.id || mechanic._id || index}
+              onPress={() => handleMechanicClick(mechanic)}
+              activeOpacity={0.8}
+              style={[styles.tooltipContainer, { left: `${left}%`, top: `${top}%` }]}
             >
-              <View style={styles.mechanicContainer}>
-                <View style={styles.mechanicDot}>
-                  <Ionicons name="construct" size={10} color="#fff" />
-                </View>
-                <View style={styles.mechanicLabelContainer}>
-                  <Text style={styles.mechanicLabelText} numberOfLines={1}>
-                    {name}
-                  </Text>
+              <View style={styles.tooltipContent}>
+                <Text style={styles.tooltipName} numberOfLines={1}>{mechanic.name}</Text>
+                <View style={styles.tooltipRating}>
+                  <Ionicons name="star" size={10} color="#FFD700" />
+                  <Text style={styles.tooltipRatingText}>{(mechanic.rating || 0).toFixed(1)}</Text>
                 </View>
               </View>
-            </MapLibreGL.PointAnnotation>
+              <View style={styles.tooltipArrow} />
+            </TouchableOpacity>
           );
         })}
-      </MapLibreGL.MapView>
+
+        {/* Mechanic Count Overlay */}
+        {isFullScreen && (
+          <View style={styles.countOverlay}>
+            <View style={styles.countBadge}>
+              <View style={styles.pulseDot} />
+              <Text style={styles.countText}>
+                {mechanics.length} mechanics active in your area
+              </Text>
+            </View>
+          </View>
+        )}
+      </View>
+
+      {!isFullScreen && (
+        <View style={styles.footer}>
+          <Text style={styles.footerText}>
+            {mechanics.length} mechanics active • Tap to view details
+          </Text>
+        </View>
+      )}
     </View>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
-    height: 400,
-    borderRadius: 16,
+    height: 380,
+    borderRadius: 24,
+    backgroundColor: '#ffffff',
+    marginBottom: 20,
     overflow: 'hidden',
-    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#f0f0f0',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.05,
+    shadowRadius: 15,
+    elevation: 3,
   },
-  map: {
+  fullScreenContainer: {
+    height: '100%',
+    width: '100%',
+    borderRadius: 0,
+    marginBottom: 0,
+    borderWidth: 0,
+  },
+  mapHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f8f8f8',
+    gap: 8,
+  },
+  title: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#000000',
+  },
+  mapArea: {
     flex: 1,
+    backgroundColor: '#F3F4F6',
+    position: 'relative',
   },
-  userMarker: {
+  mapGrid: {
+    ...StyleSheet.absoluteFillObject,
+    opacity: 0.03,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+  },
+  gridLine: {
+    width: '20%',
+    height: '12.5%',
+    borderWidth: 0.5,
+    borderColor: '#000',
+  },
+  marker: {
+    position: 'absolute',
     width: 20,
     height: 20,
     borderRadius: 10,
-    backgroundColor: 'rgba(0, 122, 255, 0.15)',
     justifyContent: 'center',
     alignItems: 'center',
   },
-  userMarkerInner: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    backgroundColor: '#007AFF',
+  userMarker: {
+    zIndex: 10,
+  },
+  userDot: {
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    backgroundColor: '#3B82F6',
     borderWidth: 2,
-    borderColor: '#fff',
+    borderColor: '#ffffff',
   },
-  landmarkContainer: {
+  userPulse: {
+    position: 'absolute',
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: 'rgba(59, 130, 246, 0.2)',
+  },
+  landmarkMarker: {
+    position: 'absolute',
     alignItems: 'center',
-    justifyContent: 'center',
   },
   landmarkDot: {
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: '#001f3f',
-    borderWidth: 1.5,
-    borderColor: '#fff',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.2,
-    shadowRadius: 2,
-    elevation: 2,
+    backgroundColor: '#10B981',
+    opacity: 0.6,
   },
-  labelContainer: {
-    marginTop: 2,
-    backgroundColor: 'rgba(255, 255, 255, 0.95)',
+  landmarkLabelContainer: {
+    backgroundColor: 'rgba(255, 255, 255, 0.8)',
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 4,
-    borderWidth: 0.5,
-    borderColor: 'rgba(0, 31, 63, 0.2)',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.15,
-    shadowRadius: 2,
-    elevation: 2,
-    maxWidth: 120,
+    marginTop: 4,
   },
-  labelText: {
+  landmarkLabel: {
     fontSize: 9,
+    color: '#065F46',
     fontWeight: '600',
-    color: '#001f3f',
-    textAlign: 'center',
   },
-  mechanicContainer: {
+  tooltipContainer: {
+    position: 'absolute',
     alignItems: 'center',
-    justifyContent: 'center',
+    zIndex: 5,
   },
-  mechanicDot: {
-    width: 16,
-    height: 16,
-    borderRadius: 8,
-    backgroundColor: '#FF6B35',
-    borderWidth: 1.5,
-    borderColor: '#fff',
-    justifyContent: 'center',
+  tooltipContent: {
+    backgroundColor: '#111111',
+    paddingVertical: 7,
+    paddingHorizontal: 12,
+    borderRadius: 14,
+    flexDirection: 'row',
     alignItems: 'center',
+    gap: 8,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
+    shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.2,
-    shadowRadius: 2,
-    elevation: 2,
+    shadowRadius: 6,
+    elevation: 6,
   },
-  mechanicLabelContainer: {
-    marginTop: 2,
+  tooltipName: {
+    color: '#ffffff',
+    fontSize: 13,
+    fontWeight: '700',
+    maxWidth: 90,
+  },
+  tooltipRating: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+  },
+  tooltipRatingText: {
+    color: '#ffffff',
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  tooltipArrow: {
+    width: 0,
+    height: 0,
+    backgroundColor: 'transparent',
+    borderStyle: 'solid',
+    borderLeftWidth: 6,
+    borderRightWidth: 6,
+    borderTopWidth: 6,
+    borderLeftColor: 'transparent',
+    borderRightColor: 'transparent',
+    borderTopColor: '#111111',
+    marginTop: -1,
+  },
+  countOverlay: {
+    position: 'absolute',
+    top: 20,
+    left: 20,
+    right: 20,
+    alignItems: 'center',
+    zIndex: 20,
+  },
+  countBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
     backgroundColor: 'rgba(255, 255, 255, 0.95)',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
-    borderWidth: 0.5,
-    borderColor: 'rgba(255, 107, 53, 0.3)',
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 20,
+    gap: 10,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.15,
-    shadowRadius: 2,
-    elevation: 2,
-    maxWidth: 120,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 4,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
   },
-  mechanicLabelText: {
-    fontSize: 9,
-    fontWeight: '600',
-    color: '#FF6B35',
-    textAlign: 'center',
+  pulseDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#EF4444',
   },
+  countText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#1F2937',
+    letterSpacing: -0.2,
+  },
+  footer: {
+    padding: 12,
+    backgroundColor: '#fafafa',
+    alignItems: 'center',
+  },
+  footerText: {
+    fontSize: 12,
+    color: '#888888',
+    fontWeight: '500',
+  }
 });
 
 export default OfflineMapView;

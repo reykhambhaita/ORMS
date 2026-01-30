@@ -1,7 +1,5 @@
 // src/screens/SignupScreen.jsx
 import { RussoOne_400Regular, useFonts } from '@expo-google-fonts/russo-one';
-import MaskedView from '@react-native-masked-view/masked-view';
-import { LinearGradient } from 'expo-linear-gradient';
 import { useState } from 'react';
 import {
   Alert,
@@ -59,28 +57,13 @@ const SignupScreen = ({ navigation }) => {
         bounces={false}
         showsVerticalScrollIndicator={false}
       >
-        {/* Header Section with Gradient */}
-        <LinearGradient
-          colors={['#003355', '#001122']}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={styles.headerSection}
-        >
-          {/* Logo with split-color effect */}
+        {/* Header Section */}
+        <View style={styles.headerSection}>
+          {/* Logo */}
           <View style={styles.logoContainer}>
-            <MaskedView
-              maskElement={
-                <Text style={styles.logoText}>Create Account</Text>
-              }
-            >
-              <LinearGradient
-                colors={['#ffffff', '#ffffff', '#001122', '#001122']}
-                locations={[0, 0.41, 0.41, 1]}
-                style={styles.logoGradient}
-              />
-            </MaskedView>
+            <Text style={styles.logoText}>Create Account</Text>
           </View>
-        </LinearGradient>
+        </View>
 
         {/* Form Section */}
         <View style={styles.formSection}>
@@ -175,39 +158,29 @@ const styles = StyleSheet.create({
     flexGrow: 1,
   },
   headerSection: {
-    height: '40%',
-    minHeight: 300,
-    justifyContent: 'flex-end',
+    height: '30%',
+    minHeight: 200,
+    justifyContent: 'center',
     alignItems: 'center',
-    paddingBottom: 0,
+    backgroundColor: '#ffffff',
   },
   logoContainer: {
-    marginBottom: -18,
-    zIndex: 20,
     justifyContent: 'center',
-
+    alignItems: 'center',
   },
   logoText: {
-    fontSize: 38,
+    fontSize: 44,
     fontFamily: 'RussoOne_400Regular',
-    letterSpacing: -1,
-
+    letterSpacing: -0.5,
+    color: '#000000',
     alignSelf: 'center',
-  },
-  logoGradient: {
-    height: 60,
-    width: 320,
   },
   formSection: {
     flex: 1,
     backgroundColor: '#ffffff',
-    borderTopLeftRadius: 32,
-    borderTopRightRadius: 32,
-    marginTop: -16,
     paddingHorizontal: 32,
-    paddingTop: 70,
-    paddingBottom: 130,
-    zIndex: 10,
+    paddingTop: 20,
+    paddingBottom: 60,
   },
   formContent: {
     flex: 1,
@@ -233,12 +206,17 @@ const styles = StyleSheet.create({
     color: '#333',
   },
   continueButton: {
-    backgroundColor: '#001f3f',
+    backgroundColor: '#111111',
     height: 56,
-    borderRadius: 32,
+    borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 16,
+    marginTop: 24,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.05,
+    shadowRadius: 12,
+    elevation: 4,
   },
   continueButtonText: {
     color: '#ffffff',
@@ -254,8 +232,8 @@ const styles = StyleSheet.create({
     color: '#6b7280',
   },
   loginLink: {
-    color: '#001f3f',
-    fontWeight: '600',
+    color: '#111111',
+    fontWeight: '700',
   },
 });
 

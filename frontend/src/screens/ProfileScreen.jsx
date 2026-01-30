@@ -2,7 +2,7 @@
 import { RussoOne_400Regular, useFonts } from '@expo-google-fonts/russo-one';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
-import { useEffect, useState } from 'react';
+import { useEffect, useLayoutEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -17,9 +17,11 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { useTheme } from '../context/ThemeContext';
 import authService from './authService';
 
 const ProfileScreen = ({ navigation }) => {
+  const { theme, themeMode, setThemeMode, isDark } = useTheme();
   const [fontsLoaded] = useFonts({
     RussoOne_400Regular,
   });
@@ -32,9 +34,29 @@ const ProfileScreen = ({ navigation }) => {
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [showReviewModal, setShowReviewModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
+  const [showAppearanceModal, setShowAppearanceModal] = useState(false);
   const [editUsername, setEditUsername] = useState('');
   const [editEmail, setEditEmail] = useState('');
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
+
+  useLayoutEffect(() => {
+    navigation.setOptions({
+      headerShown: true,
+      headerTitle: 'My Profile',
+      headerStyle: {
+        backgroundColor: theme.card,
+        borderBottomWidth: 1,
+        borderBottomColor: theme.border,
+        shadowColor: 'transparent',
+        elevation: 0,
+      },
+      headerTintColor: theme.text,
+      headerTitleStyle: {
+        fontWeight: '600',
+      },
+      headerRight: null,
+    });
+  }, [navigation, theme]);
 
   useEffect(() => {
     loadProfileData();
@@ -206,125 +228,197 @@ const ProfileScreen = ({ navigation }) => {
 
   if (!fontsLoaded || loading) {
     return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#001f3f" />
-        <Text style={styles.loadingText}>Loading profile...</Text>
+      <View style={[styles(theme).loadingContainer, { backgroundColor: theme.background }]}>
+        <ActivityIndicator size="large" color={theme.text} />
+        <Text style={[styles(theme).loadingText, { color: theme.textSecondary }]}>Loading profile...</Text>
       </View>
     );
   }
 
+  const dynamicStyles = styles(theme);
+
   return (
-    <View style={styles.container}>
+    <View style={dynamicStyles.container}>
       <ScrollView
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={dynamicStyles.scrollContent}
         showsVerticalScrollIndicator={false}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handleRefresh}
+            tintColor={theme.text}
+            colors={[theme.primary]}
+          />
         }
       >
         {/* User Profile Card */}
-        <View style={styles.profileCard}>
-          <View style={styles.avatarContainer}>
-            <View style={styles.avatar}>
+        <View style={dynamicStyles.profileCard}>
+          <View style={dynamicStyles.avatarContainer}>
+            <View style={dynamicStyles.avatar}>
               {user?.avatar ? (
                 <Image
                   source={{ uri: user.avatar }}
-                  style={styles.avatarImage}
+                  style={dynamicStyles.avatarImage}
                 />
               ) : (
-                <Ionicons name="person" size={32} color="#ffffff" />
+                <Ionicons name="person" size={32} color={theme.text} />
               )}
             </View>
             <TouchableOpacity
-              style={styles.editAvatarButton}
+              style={dynamicStyles.editAvatarButton}
               onPress={handleAvatarEdit}
               disabled={uploadingAvatar}
             >
               {uploadingAvatar ? (
-                <ActivityIndicator size="small" color="#001f3f" />
+                <ActivityIndicator size="small" color={theme.text} />
               ) : (
-                <Ionicons name="camera" size={16} color="#001f3f" />
+                <Ionicons name="camera" size={16} color={theme.text} />
               )}
             </TouchableOpacity>
           </View>
 
-          <Text style={styles.emailText}>{user?.email || 'N/A'}</Text>
-          <Text style={styles.usernameText}>{user?.username || 'Username'}</Text>
+          <Text style={dynamicStyles.emailText}>{user?.email || 'N/A'}</Text>
+          <Text style={dynamicStyles.usernameText}>{user?.username || 'Username'}</Text>
 
-          <TouchableOpacity style={styles.editButton} onPress={handleEditProfile}>
-            <Text style={styles.editButtonText}>edit info</Text>
+          <TouchableOpacity style={dynamicStyles.editButton} onPress={handleEditProfile}>
+            <Text style={dynamicStyles.editButtonText}>edit info</Text>
           </TouchableOpacity>
         </View>
 
         {/* Menu Options */}
-        <View style={styles.menuContainer}>
+        <View style={dynamicStyles.menuContainer}>
           <TouchableOpacity
-            style={styles.menuItem}
-            onPress={() => Alert.alert('Appearance', 'Appearance settings coming soon!')}
+            style={dynamicStyles.menuItem}
+            onPress={() => setShowAppearanceModal(true)}
           >
-            <Text style={styles.menuItemText}>Appearance</Text>
-            <Ionicons name="chevron-forward" size={20} color="#666" />
+            <Text style={dynamicStyles.menuItemText}>Appearance</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <Text style={{ fontSize: 13, color: theme.textSecondary }}>
+                {themeMode.charAt(0).toUpperCase() + themeMode.slice(1)}
+              </Text>
+              <Ionicons name="chevron-forward" size={20} color={theme.textSecondary} />
+            </View>
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={styles.menuItem}
+            style={dynamicStyles.menuItem}
             onPress={() => setShowPaymentModal(true)}
           >
-            <Text style={styles.menuItemText}>Payment History</Text>
-            <Ionicons name="chevron-forward" size={20} color="#666" />
+            <Text style={dynamicStyles.menuItemText}>Payment History</Text>
+            <Ionicons name="chevron-forward" size={20} color={theme.textSecondary} />
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={styles.menuItem}
+            style={dynamicStyles.menuItem}
             onPress={() => setShowReviewModal(true)}
           >
-            <Text style={styles.menuItemText}>Review History</Text>
-            <Ionicons name="chevron-forward" size={20} color="#666" />
+            <Text style={dynamicStyles.menuItemText}>Review History</Text>
+            <Ionicons name="chevron-forward" size={20} color={theme.textSecondary} />
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={styles.menuItem}
+            style={dynamicStyles.menuItem}
             onPress={() => Alert.alert('App Permissions', 'Manage app permissions here.')}
           >
-            <Text style={styles.menuItemText}>App Permissions</Text>
-            <Ionicons name="chevron-forward" size={20} color="#666" />
+            <Text style={dynamicStyles.menuItemText}>App Permissions</Text>
+            <Ionicons name="chevron-forward" size={20} color={theme.textSecondary} />
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.menuItem, styles.menuItemLast]}
+            style={[dynamicStyles.menuItem, dynamicStyles.menuItemLast]}
             onPress={() => Alert.alert('About', 'ORMS - On-Road Mechanic Service\nVersion 1.0.0')}
           >
-            <Text style={styles.menuItemText}>About</Text>
-            <Ionicons name="chevron-forward" size={20} color="#666" />
+            <Text style={dynamicStyles.menuItemText}>About</Text>
+            <Ionicons name="chevron-forward" size={20} color={theme.textSecondary} />
           </TouchableOpacity>
         </View>
 
         {/* GitHub Repository Card */}
-        <TouchableOpacity style={styles.repoCard} onPress={openGitHub}>
-          <Text style={styles.repoTitle}>Check out the app repository here.</Text>
-          <View style={styles.repoInfo}>
-            <Ionicons name="logo-github" size={32} color="#000000" />
-            <Text style={styles.repoLink}>reykhambhaita/ORMS</Text>
+        <TouchableOpacity style={dynamicStyles.repoCard} onPress={openGitHub}>
+          <Text style={dynamicStyles.repoTitle}>Check out the app repository here.</Text>
+          <View style={dynamicStyles.repoInfo}>
+            <Ionicons name="logo-github" size={32} color={theme.text} />
+            <Text style={dynamicStyles.repoLink}>reykhambhaita/ORMS</Text>
           </View>
         </TouchableOpacity>
 
         {/* Logout Button */}
         <TouchableOpacity
-          style={styles.logoutButton}
+          style={dynamicStyles.logoutButton}
           onPress={handleLogout}
           activeOpacity={0.8}
         >
-          <Text style={styles.logoutButtonText}>logout</Text>
+          <Text style={dynamicStyles.logoutButtonText}>logout</Text>
         </TouchableOpacity>
 
         {/* Copyright Footer */}
-        <View style={styles.copyrightContainer}>
-          <Text style={styles.copyrightText}>© 2024 ORMS. All rights reserved.</Text>
-          <Text style={styles.copyrightSubtext}>On-Road Mechanic Service</Text>
+        <View style={dynamicStyles.copyrightContainer}>
+          <Text style={dynamicStyles.copyrightText}>© 2024 ORMS. All rights reserved.</Text>
+          <Text style={dynamicStyles.copyrightSubtext}>On-Road Mechanic Service</Text>
         </View>
 
-        <View style={styles.bottomPadding} />
+        <View style={dynamicStyles.bottomPadding} />
       </ScrollView>
+
+      {/* Appearance Modal */}
+      <Modal
+        visible={showAppearanceModal}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setShowAppearanceModal(false)}
+      >
+        <TouchableOpacity
+          style={dynamicStyles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setShowAppearanceModal(false)}
+        >
+          <View style={dynamicStyles.modalContent}>
+            <View style={dynamicStyles.modalHeader}>
+              <Text style={dynamicStyles.modalTitle}>Appearance</Text>
+              <TouchableOpacity onPress={() => setShowAppearanceModal(false)}>
+                <Ionicons name="close" size={28} color={theme.text} />
+              </TouchableOpacity>
+            </View>
+
+            <View style={{ padding: 24, gap: 12 }}>
+              {['light', 'dark', 'system'].map((mode) => (
+                <TouchableOpacity
+                  key={mode}
+                  style={[
+                    dynamicStyles.themeOption,
+                    themeMode === mode && dynamicStyles.themeOptionSelected
+                  ]}
+                  onPress={() => {
+                    setThemeMode(mode);
+                    setShowAppearanceModal(false);
+                  }}
+                >
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                    <Ionicons
+                      name={
+                        mode === 'light' ? 'sunny' :
+                          mode === 'dark' ? 'moon' : 'settings'
+                      }
+                      size={20}
+                      color={themeMode === mode ? theme.primaryText : theme.text}
+                    />
+                    <Text style={[
+                      dynamicStyles.themeOptionText,
+                      themeMode === mode && dynamicStyles.themeOptionTextSelected
+                    ]}>
+                      {mode.charAt(0).toUpperCase() + mode.slice(1)}
+                      {mode === 'system' && ' Default'}
+                    </Text>
+                  </View>
+                  {themeMode === mode && (
+                    <Ionicons name="checkmark-circle" size={24} color={theme.primaryText} />
+                  )}
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+        </TouchableOpacity>
+      </Modal>
 
       {/* Payment History Modal */}
       <Modal
@@ -333,36 +427,41 @@ const ProfileScreen = ({ navigation }) => {
         transparent={true}
         onRequestClose={() => setShowPaymentModal(false)}
       >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Payment History</Text>
+        <View style={dynamicStyles.modalOverlay}>
+          <View style={dynamicStyles.modalContent}>
+            <View style={dynamicStyles.modalHeader}>
+              <Text style={dynamicStyles.modalTitle}>Payment History</Text>
               <TouchableOpacity onPress={() => setShowPaymentModal(false)}>
-                <Ionicons name="close" size={28} color="#001f3f" />
+                <Ionicons name="close" size={28} color={theme.text} />
               </TouchableOpacity>
             </View>
 
-            <ScrollView style={styles.modalScrollView}>
+            <ScrollView style={dynamicStyles.modalScrollView}>
               {paymentHistory.length === 0 ? (
-                <View style={styles.emptyState}>
-                  <Ionicons name="card-outline" size={48} color="#ccc" />
-                  <Text style={styles.emptyText}>No payment history</Text>
+                <View style={dynamicStyles.emptyState}>
+                  <Ionicons name="card-outline" size={48} color={theme.textTertiary} />
+                  <Text style={dynamicStyles.emptyText}>No payment history</Text>
                 </View>
               ) : (
                 paymentHistory.map((payment, index) => (
-                  <View key={payment.id || index} style={styles.historyCard}>
-                    <View style={styles.historyHeader}>
-                      <Text style={styles.historyTitle}>{payment.mechanicName}</Text>
-                      <Text style={[
-                        styles.historyStatus,
-                        payment.status === 'completed' ? styles.statusCompleted : styles.statusPending
+                  <View key={payment.id || index} style={dynamicStyles.historyCard}>
+                    <View style={dynamicStyles.historyHeader}>
+                      <Text style={dynamicStyles.historyTitle}>{payment.mechanicName}</Text>
+                      <View style={[
+                        dynamicStyles.statusBadge,
+                        payment.status === 'completed' ? dynamicStyles.statusCompletedBadge : dynamicStyles.statusPendingBadge
                       ]}>
-                        {payment.status.toUpperCase()}
-                      </Text>
+                        <Text style={[
+                          dynamicStyles.historyStatus,
+                          payment.status === 'completed' ? dynamicStyles.statusCompleted : dynamicStyles.statusPending
+                        ]}>
+                          {payment.status.toUpperCase()}
+                        </Text>
+                      </View>
                     </View>
-                    <Text style={styles.historyAmount}>${payment.amount.toFixed(2)}</Text>
-                    <Text style={styles.historyDescription}>{payment.description}</Text>
-                    <Text style={styles.historyDate}>{formatDate(payment.createdAt)}</Text>
+                    <Text style={dynamicStyles.historyAmount}>${payment.amount.toFixed(2)}</Text>
+                    <Text style={dynamicStyles.historyDescription}>{payment.description}</Text>
+                    <Text style={dynamicStyles.historyDate}>{formatDate(payment.createdAt)}</Text>
                   </View>
                 ))
               )}
@@ -378,35 +477,35 @@ const ProfileScreen = ({ navigation }) => {
         transparent={true}
         onRequestClose={() => setShowReviewModal(false)}
       >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Review History</Text>
+        <View style={dynamicStyles.modalOverlay}>
+          <View style={dynamicStyles.modalContent}>
+            <View style={dynamicStyles.modalHeader}>
+              <Text style={dynamicStyles.modalTitle}>Review History</Text>
               <TouchableOpacity onPress={() => setShowReviewModal(false)}>
-                <Ionicons name="close" size={28} color="#001f3f" />
+                <Ionicons name="close" size={28} color={theme.text} />
               </TouchableOpacity>
             </View>
 
-            <ScrollView style={styles.modalScrollView}>
+            <ScrollView style={dynamicStyles.modalScrollView}>
               {reviewHistory.length === 0 ? (
-                <View style={styles.emptyState}>
-                  <Ionicons name="star-outline" size={48} color="#ccc" />
-                  <Text style={styles.emptyText}>No reviews submitted</Text>
+                <View style={dynamicStyles.emptyState}>
+                  <Ionicons name="star-outline" size={48} color={theme.textTertiary} />
+                  <Text style={dynamicStyles.emptyText}>No reviews submitted</Text>
                 </View>
               ) : (
                 reviewHistory.map((review, index) => (
-                  <View key={review.id || index} style={styles.historyCard}>
-                    <View style={styles.historyHeader}>
-                      <Text style={styles.historyTitle}>{review.mechanicName}</Text>
-                      <View style={styles.ratingBadge}>
+                  <View key={review.id || index} style={dynamicStyles.historyCard}>
+                    <View style={dynamicStyles.historyHeader}>
+                      <Text style={dynamicStyles.historyTitle}>{review.mechanicName}</Text>
+                      <View style={dynamicStyles.ratingBadge}>
                         <Ionicons name="star" size={14} color="#fbbf24" />
-                        <Text style={styles.ratingText}>{review.rating}/5</Text>
+                        <Text style={dynamicStyles.ratingText}>{review.rating}/5</Text>
                       </View>
                     </View>
                     {review.comment && (
-                      <Text style={styles.reviewComment}>"{review.comment}"</Text>
+                      <Text style={dynamicStyles.reviewComment}>"{review.comment}"</Text>
                     )}
-                    <Text style={styles.historyDate}>{formatDate(review.createdAt)}</Text>
+                    <Text style={dynamicStyles.historyDate}>{formatDate(review.createdAt)}</Text>
                   </View>
                 ))
               )}
@@ -422,45 +521,45 @@ const ProfileScreen = ({ navigation }) => {
         transparent={true}
         onRequestClose={() => setShowEditModal(false)}
       >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Edit Profile</Text>
+        <View style={dynamicStyles.modalOverlay}>
+          <View style={dynamicStyles.modalContent}>
+            <View style={dynamicStyles.modalHeader}>
+              <Text style={dynamicStyles.modalTitle}>Edit Profile</Text>
               <TouchableOpacity onPress={() => setShowEditModal(false)}>
-                <Ionicons name="close" size={28} color="#001f3f" />
+                <Ionicons name="close" size={28} color={theme.text} />
               </TouchableOpacity>
             </View>
 
-            <View style={styles.editForm}>
-              <View style={styles.inputContainer}>
-                <Text style={styles.inputLabel}>Username</Text>
+            <View style={dynamicStyles.editForm}>
+              <View style={dynamicStyles.inputContainer}>
+                <Text style={dynamicStyles.inputLabel}>Username</Text>
                 <TextInput
-                  style={styles.input}
+                  style={dynamicStyles.input}
                   value={editUsername}
                   onChangeText={setEditUsername}
                   placeholder="Enter username"
-                  placeholderTextColor="#999"
+                  placeholderTextColor={theme.textSecondary}
                 />
               </View>
 
-              <View style={styles.inputContainer}>
-                <Text style={styles.inputLabel}>Email</Text>
+              <View style={dynamicStyles.inputContainer}>
+                <Text style={dynamicStyles.inputLabel}>Email</Text>
                 <TextInput
-                  style={styles.input}
+                  style={dynamicStyles.input}
                   value={editEmail}
                   onChangeText={setEditEmail}
                   placeholder="Enter email"
-                  placeholderTextColor="#999"
+                  placeholderTextColor={theme.textSecondary}
                   keyboardType="email-address"
                   autoCapitalize="none"
                 />
               </View>
 
               <TouchableOpacity
-                style={styles.saveButton}
+                style={dynamicStyles.saveButton}
                 onPress={handleSaveProfile}
               >
-                <Text style={styles.saveButtonText}>Save Changes</Text>
+                <Text style={dynamicStyles.saveButtonText}>Save Changes</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -470,10 +569,10 @@ const ProfileScreen = ({ navigation }) => {
   );
 };
 
-const styles = StyleSheet.create({
+const styles = (theme) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: theme.background,
   },
   scrollContent: {
     padding: 20,
@@ -483,24 +582,24 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#f5f5f5',
   },
   loadingText: {
     marginTop: 12,
     fontSize: 14,
-    color: '#666',
   },
   profileCard: {
-    backgroundColor: '#001f3f',
-    borderRadius: 20,
-    padding: 24,
+    backgroundColor: theme.card,
+    borderRadius: 24,
+    padding: 32,
     alignItems: 'center',
-    marginBottom: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
+    marginBottom: 24,
+    shadowColor: theme.shadow,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.05,
+    shadowRadius: 15,
     elevation: 4,
+    borderWidth: 1,
+    borderColor: theme.border,
   },
   avatarContainer: {
     marginBottom: 16,
@@ -510,10 +609,12 @@ const styles = StyleSheet.create({
     width: 64,
     height: 64,
     borderRadius: 32,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    backgroundColor: theme.inputBg,
     justifyContent: 'center',
     alignItems: 'center',
     overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: theme.border,
   },
   avatarImage: {
     width: 64,
@@ -527,46 +628,54 @@ const styles = StyleSheet.create({
     width: 28,
     height: 28,
     borderRadius: 14,
-    backgroundColor: '#ffffff',
+    backgroundColor: theme.card,
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#000',
+    shadowColor: theme.shadow,
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.2,
     shadowRadius: 2,
     elevation: 3,
   },
   emailText: {
-    fontSize: 15,
-    color: '#ffffff',
+    fontSize: 16,
+    color: theme.text,
+    fontWeight: '600',
     marginBottom: 4,
   },
   usernameText: {
-    fontSize: 13,
-    color: 'rgba(255, 255, 255, 0.7)',
-    marginBottom: 20,
+    fontSize: 14,
+    color: theme.textSecondary,
+    marginBottom: 24,
   },
   editButton: {
-    backgroundColor: '#ffffff',
+    backgroundColor: theme.primary,
     paddingHorizontal: 24,
-    paddingVertical: 10,
-    borderRadius: 20,
+    paddingVertical: 12,
+    borderRadius: 16,
+    shadowColor: theme.shadow,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.05,
+    shadowRadius: 10,
+    elevation: 4,
   },
   editButtonText: {
-    color: '#001f3f',
+    color: theme.primaryText,
     fontSize: 13,
     fontWeight: '600',
   },
   menuContainer: {
-    backgroundColor: '#ffffff',
+    backgroundColor: theme.card,
     borderRadius: 20,
     marginBottom: 20,
     overflow: 'hidden',
-    shadowColor: '#000',
+    shadowColor: theme.shadow,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.05,
     shadowRadius: 8,
     elevation: 2,
+    borderWidth: 1,
+    borderColor: theme.border,
   },
   menuItem: {
     flexDirection: 'row',
@@ -575,29 +684,31 @@ const styles = StyleSheet.create({
     paddingVertical: 18,
     paddingHorizontal: 20,
     borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
+    borderBottomColor: theme.border,
   },
   menuItemLast: {
     borderBottomWidth: 0,
   },
   menuItemText: {
     fontSize: 15,
-    color: '#333',
+    color: theme.text,
   },
   repoCard: {
-    backgroundColor: '#ffffff',
+    backgroundColor: theme.card,
     borderRadius: 20,
     padding: 24,
     alignItems: 'center',
-    shadowColor: '#000',
+    shadowColor: theme.shadow,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.05,
     shadowRadius: 8,
     elevation: 2,
+    borderWidth: 1,
+    borderColor: theme.border,
   },
   repoTitle: {
     fontSize: 14,
-    color: '#333',
+    color: theme.textSecondary,
     textAlign: 'center',
     marginBottom: 16,
     fontWeight: '500',
@@ -609,7 +720,7 @@ const styles = StyleSheet.create({
   },
   repoLink: {
     fontSize: 15,
-    color: '#333',
+    color: theme.text,
     fontWeight: '600',
   },
   copyrightContainer: {
@@ -618,23 +729,24 @@ const styles = StyleSheet.create({
   },
   copyrightText: {
     fontSize: 12,
-    color: '#999',
+    color: theme.textTertiary,
     marginBottom: 1,
   },
   copyrightSubtext: {
     fontSize: 11,
-    color: '#bbb',
+    color: theme.textTertiary,
+    opacity: 0.8,
   },
   bottomPadding: {
-    height: 40,
+    height: 120,
   },
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    backgroundColor: theme.modalOverlay,
     justifyContent: 'flex-end',
   },
   modalContent: {
-    backgroundColor: '#ffffff',
+    backgroundColor: theme.card,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     maxHeight: '80%',
@@ -647,12 +759,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     paddingBottom: 20,
     borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
+    borderBottomColor: theme.border,
   },
   modalTitle: {
     fontSize: 20,
     fontWeight: '700',
-    color: '#001f3f',
+    color: theme.text,
   },
   modalScrollView: {
     padding: 20,
@@ -664,15 +776,16 @@ const styles = StyleSheet.create({
   },
   emptyText: {
     fontSize: 15,
-    color: '#999',
+    color: theme.textTertiary,
     marginTop: 12,
   },
   historyCard: {
-    backgroundColor: '#f8f9fa',
+    backgroundColor: theme.inputBg,
     borderRadius: 16,
-    padding: 10,
+    padding: 16,
     marginBottom: 12,
-
+    borderWidth: 1,
+    borderColor: theme.border,
   },
   historyHeader: {
     flexDirection: 'row',
@@ -683,40 +796,46 @@ const styles = StyleSheet.create({
   historyTitle: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#001f3f',
+    color: theme.text,
     flex: 1,
   },
-  historyStatus: {
-    fontSize: 6,
-    fontWeight: '700',
+  statusBadge: {
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 12,
+  },
+  statusCompletedBadge: {
+    backgroundColor: theme.statusCompleted,
+  },
+  statusPendingBadge: {
+    backgroundColor: theme.statusPending,
+  },
+  historyStatus: {
+    fontSize: 10,
+    fontWeight: '700',
     textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
   statusCompleted: {
-    backgroundColor: '#d1fae5',
-    color: '#065f46',
+    color: theme.statusCompletedText,
   },
   statusPending: {
-    backgroundColor: '#fcccccff',
-    color: '#92400e ',
+    color: theme.statusPendingText,
   },
   historyAmount: {
     fontSize: 22,
     fontWeight: '700',
-    color: '#001f3f',
+    color: theme.text,
     marginBottom: 6,
   },
   historyDescription: {
     fontSize: 14,
-    color: '#666',
+    color: theme.textSecondary,
     marginBottom: 6,
   },
   historyDate: {
     fontSize: 12,
-    color: '#999',
+    color: theme.textTertiary,
   },
   ratingBadge: {
     flexDirection: 'row',
@@ -734,12 +853,12 @@ const styles = StyleSheet.create({
   },
   reviewComment: {
     fontSize: 14,
-    color: '#666',
+    color: theme.textSecondary,
     fontStyle: 'italic',
     marginBottom: 8,
     paddingLeft: 12,
     borderLeftWidth: 3,
-    borderLeftColor: '#001f3f',
+    borderLeftColor: theme.primary,
   },
   editForm: {
     padding: 24,
@@ -750,44 +869,72 @@ const styles = StyleSheet.create({
   inputLabel: {
     fontSize: 13,
     fontWeight: '600',
-    color: '#001f3f',
+    color: theme.text,
     marginBottom: 8,
   },
   input: {
-    backgroundColor: '#f8f9fa',
+    backgroundColor: theme.inputBg,
     borderRadius: 12,
     padding: 14,
     fontSize: 15,
-    color: '#333',
+    color: theme.text,
     borderWidth: 1,
-    borderColor: '#e5e7eb',
+    borderColor: theme.border,
   },
   saveButton: {
-    backgroundColor: '#001f3f',
+    backgroundColor: theme.primary,
     borderRadius: 12,
     paddingVertical: 16,
     alignItems: 'center',
     marginTop: 12,
   },
   saveButtonText: {
-    color: '#ffffff',
+    color: theme.primaryText,
     fontSize: 16,
     fontWeight: '600',
   },
   logoutButton: {
-    backgroundColor: '#001f3f',
-    height: 48,
-    borderRadius: 24,
+    backgroundColor: theme.primary,
+    height: 56,
+    borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 20,
-    marginBottom: 12,
+    marginTop: 24,
+    marginBottom: 20,
+    shadowColor: theme.shadow,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.05,
+    shadowRadius: 10,
+    elevation: 4,
   },
   logoutButtonText: {
-    color: '#ffffff',
+    color: theme.primaryText,
     fontSize: 16,
     fontWeight: '600',
   },
+  themeOption: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 16,
+    borderRadius: 12,
+    backgroundColor: theme.inputBg,
+    borderWidth: 1,
+    borderColor: theme.border,
+  },
+  themeOptionSelected: {
+    backgroundColor: theme.primary,
+    borderColor: theme.primary,
+  },
+  themeOptionText: {
+    fontSize: 16,
+    color: theme.text,
+    fontWeight: '500',
+  },
+  themeOptionTextSelected: {
+    color: theme.primaryText,
+    fontWeight: '700',
+  }
 });
 
 export default ProfileScreen;

@@ -1,7 +1,5 @@
 // src/screens/AuthLoadingScreen.jsx
 import { RussoOne_400Regular, useFonts } from '@expo-google-fonts/russo-one';
-import MaskedView from '@react-native-masked-view/masked-view';
-import { LinearGradient } from 'expo-linear-gradient';
 import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -50,7 +48,7 @@ const AuthLoadingScreen = ({ navigation }) => {
 
           // Small delay to show success message
           setTimeout(() => {
-            navigation.replace('Home');
+            navigation.replace('Main');
           }, 1500);
         } else {
           // Token is invalid or expired, go to login
@@ -79,7 +77,7 @@ const AuthLoadingScreen = ({ navigation }) => {
           console.log('Network error, but user has cached credentials');
           setStatusMessage('Offline mode - Using cached data');
           setTimeout(() => {
-            navigation.replace('Home');
+            navigation.replace('Main');
           }, 1500);
           return;
         }
@@ -99,33 +97,17 @@ const AuthLoadingScreen = ({ navigation }) => {
   }
 
   return (
-    <LinearGradient
-      colors={['#003355', '#001122']}
-      start={{ x: 0, y: 0 }}
-      end={{ x: 1, y: 1 }}
-      style={styles.container}
-    >
-      {/* Logo with split-color effect */}
+    <View style={styles.container}>
       <View style={styles.logoContainer}>
-        <MaskedView
-          maskElement={
-            <Text style={styles.logoText}>rexGO</Text>
-          }
-        >
-          <LinearGradient
-            colors={['#ffffff', '#ffffff', '#00BFFF', '#00BFFF']}
-            locations={[0, 0.50, 0.50, 1]}
-            style={styles.logoGradient}
-          />
-        </MaskedView>
+        <Text style={styles.logoText}>rexGO</Text>
       </View>
 
       {/* Loading Indicator */}
-      <ActivityIndicator size="large" color="#ffffff" style={styles.loader} />
+      <ActivityIndicator size="large" color="#111111" style={styles.loader} />
 
       {/* Status Message */}
       <Text style={styles.statusText}>{statusMessage}</Text>
-    </LinearGradient>
+    </View>
   );
 };
 
@@ -134,6 +116,7 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    backgroundColor: '#ffffff',
   },
   logoContainer: {
     marginBottom: 40,
@@ -142,23 +125,19 @@ const styles = StyleSheet.create({
   logoText: {
     fontSize: 48,
     fontFamily: 'RussoOne_400Regular',
-    letterSpacing: 1,
+    letterSpacing: 2,
+    color: '#111111',
     alignSelf: 'center',
-  },
-  logoGradient: {
-    height: 60,
-    width: 200,
   },
   loader: {
     marginVertical: 20,
   },
   statusText: {
     fontSize: 14,
-    color: '#ffffff',
-    marginTop: 12,
+    color: '#888888',
+    marginTop: 16,
     textAlign: 'center',
     paddingHorizontal: 40,
-    opacity: 0.8,
   },
 });
 

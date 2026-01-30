@@ -16,17 +16,43 @@ import {
 import authService from '../../screens/authService.js';
 import dbManager from '../../utils/database';
 
-const MechanicFinder = forwardRef(({ searchLocation, searchLocationName, onResetToGPS, onMechanicsUpdate, navigation }, ref) => {
+const MechanicFinder = forwardRef(({ searchLocation, searchLocationName, onResetToGPS, onMechanicsUpdate, navigation, targetMechanicId }, ref) => {
   const [loading, setLoading] = useState(false);
   const [mechanics, setMechanics] = useState([]);
   const [selectedMechanic, setSelectedMechanic] = useState(null);
   const [detailModalVisible, setDetailModalVisible] = useState(false);
+  const [hasAutoOpened, setHasAutoOpened] = useState(false);
 
   useEffect(() => {
     if (searchLocation?.latitude && searchLocation?.longitude) {
       loadMechanics();
     }
   }, [searchLocation]);
+
+  // Handle deep-linking to a specific mechanic
+  useEffect(() => {
+    if (targetMechanicId && mechanics.length > 0 && !hasAutoOpened) {
+      const mechanic = mechanics.find(m => (m.id || m._id) === targetMechanicId);
+      if (mechanic) {
+        setSelectedMechanic(mechanic);
+        setDetailModalVisible(true);
+        setHasAutoOpened(true);
+        console.log(`🎯 Deep-link success: Auto-opening modal for ${mechanic.name}`);
+
+        // Clear the navigation param so it doesn't trigger again on re-mounts
+        if (navigation?.setParams) {
+          navigation.setParams({ mechanicId: undefined });
+        }
+      }
+    }
+  }, [targetMechanicId, mechanics, hasAutoOpened]);
+
+  // Reset auto-open flag when targetMechanicId changes to a new one
+  useEffect(() => {
+    if (targetMechanicId) {
+      setHasAutoOpened(false);
+    }
+  }, [targetMechanicId]);
 
   const loadMechanics = async () => {
     if (!searchLocation?.latitude || !searchLocation?.longitude) return;
@@ -409,11 +435,13 @@ const MechanicFinder = forwardRef(({ searchLocation, searchLocationName, onReset
     <>
       <View style={styles.mechanicsContainer}>
         <View style={styles.containerHeader}>
-          <Text style={styles.containerTitle}>
-            {mechanics.length > 0
-              ? `${mechanics.length} Mechanic${mechanics.length > 1 ? 's' : ''} nearby`
-              : 'Find Mechanics'}
-          </Text>
+          <View style={styles.headerTitleRow}>
+            <Text style={styles.containerTitle}>
+              {mechanics.length > 0
+                ? `${mechanics.length} Mechanic${mechanics.length > 1 ? 's' : ''} nearby`
+                : 'Find Mechanics'}
+            </Text>
+          </View>
           {searchLocationName && (
             <View style={styles.searchLocationRow}>
               <View style={styles.searchLocationBadge}>
@@ -454,7 +482,7 @@ const MechanicFinder = forwardRef(({ searchLocation, searchLocationName, onReset
                           key={star}
                           name={star <= Math.round(mechanic.rating || 0) ? 'star' : 'star-outline'}
                           size={14}
-                          color="#000000ff"
+                          color="#000000"
                         />
                       ))}
                       <Text style={styles.ratingValue}>
@@ -566,7 +594,7 @@ const MechanicFinder = forwardRef(({ searchLocation, searchLocationName, onReset
                     });
                   }}
                 >
-                  <Ionicons name="wallet-outline" size={20} color="#0A4D4D" />
+                  <Ionicons name="wallet-outline" size={20} color="#000000" />
                   <Text style={styles.walletButtonText}>Payment</Text>
                 </TouchableOpacity>
 
@@ -580,7 +608,7 @@ const MechanicFinder = forwardRef(({ searchLocation, searchLocationName, onReset
                     );
                   }}
                 >
-                  <Ionicons name="star-outline" size={20} color="#6B7280" />
+                  <Ionicons name="star-outline" size={20} color="#000000" />
                   <Text style={styles.reviewButtonText}>Leave a review</Text>
                 </TouchableOpacity>
               </View>
@@ -594,10 +622,8 @@ const MechanicFinder = forwardRef(({ searchLocation, searchLocationName, onReset
 
 const styles = StyleSheet.create({
   mechanicsContainer: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 20,
-    marginBottom: 16,
+    marginBottom: 20,
+    marginTop: 10,
   },
   containerHeader: {
     marginBottom: 16,
@@ -605,8 +631,15 @@ const styles = StyleSheet.create({
   containerTitle: {
     fontSize: 18,
     fontWeight: '700',
-    color: '#1F2937',
-    marginBottom: 4,
+    color: '#111111',
+  },
+  headerTitleRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  filterButton: {
+    padding: 4,
   },
   searchLocationRow: {
     flexDirection: 'row',
@@ -622,36 +655,41 @@ const styles = StyleSheet.create({
   },
   searchLocationText: {
     fontSize: 12,
-    color: '#0A4D4D',
+    color: '#000000',
     fontWeight: '500',
   },
   resetButton: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    backgroundColor: '#E0EBF2',
+    backgroundColor: '#f3f4f6',
     paddingHorizontal: 8,
     paddingVertical: 4,
-    borderRadius: 12,
+    borderRadius: 8,
   },
   resetButtonText: {
     fontSize: 11,
-    color: '#0A4D4D',
+    color: '#111111',
     fontWeight: '600',
   },
   loader: {
     marginVertical: 20,
   },
   mechanicsScrollView: {
-    maxHeight: 150,
+    paddingBottom: 10,
   },
   mechanicCard: {
-    backgroundColor: '#F9FAFB',
-    borderRadius: 12,
+    backgroundColor: '#ffffff',
+    borderRadius: 16,
     padding: 16,
     marginBottom: 12,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: '#f0f0f0',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.03,
+    shadowRadius: 5,
+    elevation: 1,
   },
   cardHeader: {
     flexDirection: 'row',
@@ -665,7 +703,7 @@ const styles = StyleSheet.create({
   mechanicName: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#1F2937',
+    color: '#111111',
     marginBottom: 2,
   },
   starRating: {
@@ -676,11 +714,11 @@ const styles = StyleSheet.create({
   ratingValue: {
     fontSize: 13,
     fontWeight: '600',
-    color: '#6B7280',
+    color: '#888888',
     marginLeft: 6,
   },
   distanceBadge: {
-    backgroundColor: '#c7dde4ff',
+    backgroundColor: '#f3f4f6',
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 8,
@@ -688,7 +726,7 @@ const styles = StyleSheet.create({
   distanceText: {
     fontSize: 12,
     fontWeight: '600',
-    color: '#0A4D4D',
+    color: '#111111',
   },
   emptyState: {
     padding: 40,
@@ -737,7 +775,7 @@ const styles = StyleSheet.create({
   modalTitle: {
     fontSize: 22,
     fontWeight: '700',
-    color: '#1F2937',
+    color: '#111111',
     marginBottom: 8,
   },
   modalRating: {
@@ -748,7 +786,7 @@ const styles = StyleSheet.create({
   modalRatingText: {
     fontSize: 15,
     fontWeight: '600',
-    color: '#6B7280',
+    color: '#888888',
     marginLeft: 6,
   },
   closeButton: {
@@ -766,7 +804,7 @@ const styles = StyleSheet.create({
   },
   modalDistanceText: {
     fontSize: 14,
-    color: '#6B7280',
+    color: '#888888',
     fontWeight: '500',
   },
   modalActions: {
@@ -781,7 +819,12 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   callButton: {
-    backgroundColor: '#001f3f',
+    backgroundColor: '#111111',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.05,
+    shadowRadius: 10,
+    elevation: 4,
   },
   callButtonText: {
     color: '#FFFFFF',
@@ -789,9 +832,9 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   walletButton: {
-    backgroundColor: '#e0ebf2ff',
+    backgroundColor: '#ffffff',
     borderWidth: 1,
-    borderColor: '#84b1d6ff',
+    borderColor: '#f0f0f0',
   },
   walletButtonText: {
     color: '#0A4D4D',

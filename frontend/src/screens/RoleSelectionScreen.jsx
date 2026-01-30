@@ -1,7 +1,5 @@
 // src/screens/RoleSelectionScreen.jsx
 import { RussoOne_400Regular, useFonts } from '@expo-google-fonts/russo-one';
-import MaskedView from '@react-native-masked-view/masked-view';
-import { LinearGradient } from 'expo-linear-gradient';
 import { useState } from 'react';
 import {
   ActivityIndicator,
@@ -60,7 +58,7 @@ const RoleSelectionScreen = ({ navigation, route }) => {
 
     if (result.success) {
       console.log('Signup successful:', result.user);
-      navigation.replace('Home');
+      navigation.replace('Main');
     } else {
       Alert.alert('Signup Failed', result.error);
     }
@@ -74,27 +72,12 @@ const RoleSelectionScreen = ({ navigation, route }) => {
         bounces={false}
         showsVerticalScrollIndicator={false}
       >
-        {/* Header Section with Gradient */}
-        <LinearGradient
-          colors={['#003355', '#001122']}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={styles.headerSection}
-        >
+        {/* Header Section */}
+        <View style={styles.headerSection}>
           <View style={styles.logoContainer}>
-            <MaskedView
-              maskElement={
-                <Text style={styles.logoText}>Select Role</Text>
-              }
-            >
-              <LinearGradient
-                colors={['#ffffff', '#ffffff', '#001122', '#001122']}
-                locations={[0, 0.38, 0.38, 1]}
-                style={styles.logoGradient}
-              />
-            </MaskedView>
+            <Text style={styles.logoText}>Select Role</Text>
           </View>
-        </LinearGradient>
+        </View>
 
         {/* Form Section */}
         <View style={styles.formSection}>
@@ -183,7 +166,7 @@ const RoleSelectionScreen = ({ navigation, route }) => {
               activeOpacity={0.8}
             >
               {loading ? (
-                <ActivityIndicator color="#fff" />
+                <ActivityIndicator color="#ffffff" />
               ) : (
                 <Text style={styles.signupButtonText}>sign up</Text>
               )}
@@ -211,44 +194,35 @@ const RoleSelectionScreen = ({ navigation, route }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#ffffff',
+    backgroundColor: '#fafafa',
   },
   scrollContent: {
     flexGrow: 1,
   },
   headerSection: {
-    height: '35%',
-    minHeight: 250,
-    justifyContent: 'flex-end',
+    height: '30%',
+    minHeight: 200,
+    justifyContent: 'center',
     alignItems: 'center',
-    paddingBottom: 0,
+    backgroundColor: '#ffffff',
   },
   logoContainer: {
-    marginBottom: -20,
-    zIndex: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   logoText: {
-    fontSize: 38,
+    fontSize: 44,
     fontFamily: 'RussoOne_400Regular',
-    letterSpacing: -1,
-    marginLeft: 40,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  logoGradient: {
-    height: 60,
-    width: 280,
+    letterSpacing: -0.5,
+    color: '#111111',
+    alignSelf: 'center',
   },
   formSection: {
     flex: 1,
     backgroundColor: '#ffffff',
-    borderTopLeftRadius: 32,
-    borderTopRightRadius: 32,
-    marginTop: -16,
     paddingHorizontal: 32,
-    paddingTop: 70,
-    paddingBottom: 150,
-    zIndex: 10,
+    paddingTop: 32,
+    paddingBottom: 60,
   },
   formContent: {
     flex: 1,
@@ -278,17 +252,17 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   roleButtonActive: {
-    borderColor: '#001f3f',
-    backgroundColor: '#e8f0f8',
+    borderColor: '#111111',
+    backgroundColor: '#f8f9fa',
   },
   roleButtonText: {
     fontSize: 16,
-    color: '#6b7280',
+    color: '#888888',
     fontWeight: '500',
   },
   roleButtonTextActive: {
-    color: '#001f3f',
-    fontWeight: '600',
+    color: '#111111',
+    fontWeight: '700',
   },
   mechanicFields: {
     marginBottom: 24,
@@ -321,12 +295,17 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   signupButton: {
-    backgroundColor: '#001f3f',
+    backgroundColor: '#111111',
     height: 56,
-    borderRadius: 32,
+    borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 16,
+    marginTop: 24,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.05,
+    shadowRadius: 12,
+    elevation: 4,
   },
   signupButtonText: {
     color: '#ffffff',
@@ -339,11 +318,11 @@ const styles = StyleSheet.create({
   },
   loginText: {
     fontSize: 14,
-    color: '#6b7280',
+    color: '#888888',
   },
   loginLink: {
-    color: '#001f3f',
-    fontWeight: '600',
+    color: '#111111',
+    fontWeight: '700',
   },
 });
 

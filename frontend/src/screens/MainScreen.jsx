@@ -1,0 +1,117 @@
+// src/screens/MainScreen.jsx
+import { useEffect, useRef, useState } from 'react';
+import { StyleSheet, View } from 'react-native';
+import MultiModalLocationTracker from '../components/location/MultiModalLocationTracker';
+import CustomBottomNavigation from '../components/navigation/CustomBottomNavigation';
+import { useTheme } from '../context/ThemeContext';
+import authService from './authService';
+import HomeScreen from './HomeScreen';
+import ProfileScreen from './ProfileScreen';
+import SearchScreen from './SearchScreen';
+
+const MainScreen = ({ navigation, route }) => {
+  const { theme } = useTheme();
+  const [activeTab, setActiveTab] = useState('Home');
+  const [currentLocation, setCurrentLocation] = useState(null);
+  const [landmarks, setLandmarks] = useState([]);
+  const [mechanics, setMechanics] = useState([]);
+  const [user, setUser] = useState(null);
+  const trackerRef = useRef(null);
+
+  useEffect(() => {
+    const fetchUser = async () => {
+      const result = await authService.getCurrentUser();
+      if (result.success) {
+        setUser(result.user);
+      }
+    };
+    fetchUser();
+  }, []);
+
+  // Switch to Search tab if a mechanicId is passed via navigation params (e.g., from Map tooltips)
+  useEffect(() => {
+    if (route.params?.mechanicId) {
+      console.log('🔄 MainScreen: Deep-link detected, switching to Search tab');
+      setActiveTab('Search');
+    }
+  }, [route.params?.mechanicId]);
+
+  const handleLocationUpdate = (location) => {
+    setCurrentLocation(location);
+  };
+
+  const handleLandmarksUpdate = (landmarkList) => {
+    setLandmarks(landmarkList);
+  };
+
+  const handleMechanicsUpdate = (mechanicList) => {
+    setMechanics(mechanicList);
+  };
+
+  const renderScreen = () => {
+    switch (activeTab) {
+      case 'Home':
+        return (
+          <HomeScreen
+            navigation={navigation}
+            route={route}
+            currentLocation={currentLocation}
+            landmarks={landmarks}
+            mechanics={mechanics}
+            trackerRef={trackerRef}
+            user={user}
+          />
+        );
+      case 'Search':
+        return (
+          <SearchScreen
+            navigation={navigation}
+            route={route}
+            currentLocation={currentLocation}
+            onLandmarksUpdate={handleLandmarksUpdate}
+            onMechanicsUpdate={handleMechanicsUpdate}
+          />
+        );
+      case 'Profile':
+        return (
+          <ProfileScreen
+            navigation={navigation}
+            route={route}
+          />
+        );
+      default:
+        return null;
+    }
+  };
+
+  return (
+    <View style={[styles.container, { backgroundColor: theme.background }]}>
+      <MultiModalLocationTracker
+        ref={trackerRef}
+        onLocationUpdate={handleLocationUpdate}
+        onLandmarksUpdate={handleLandmarksUpdate}
+        onMechanicsUpdate={handleMechanicsUpdate}
+      />
+
+      <View style={styles.screenContainer}>
+        {renderScreen()}
+      </View>
+
+      <CustomBottomNavigation
+        activeTab={activeTab}
+        onTabPress={setActiveTab}
+      />
+    </View>
+  );
+};
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+  },
+  screenContainer: {
+    flex: 1,
+  },
+});
+
+export default MainScreen;
