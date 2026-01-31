@@ -55,7 +55,7 @@ const LoginScreen = ({ navigation }) => {
         <View style={styles.headerSection}>
           {/* Logo */}
           <View style={styles.logoContainer}>
-            <Text style={styles.logoText}>rexGO</Text>
+            <Text style={styles.logoText}>ORMS</Text>
           </View>
         </View>
 

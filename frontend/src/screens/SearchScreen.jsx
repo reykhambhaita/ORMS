@@ -15,22 +15,9 @@ const SearchScreen = ({ navigation, route, currentLocation, onLandmarksUpdate, o
 
   useLayoutEffect(() => {
     navigation.setOptions({
-      headerShown: true,
-      headerTitle: 'Search Mechanics',
-      headerStyle: {
-        backgroundColor: theme.card,
-        borderBottomWidth: 1,
-        borderBottomColor: theme.border,
-        shadowColor: 'transparent',
-        elevation: 0,
-      },
-      headerTintColor: theme.text,
-      headerTitleStyle: {
-        fontWeight: '600',
-      },
-      headerRight: null,
+      headerShown: false,
     });
-  }, [navigation, theme]);
+  }, [navigation]);
 
   useEffect(() => {
     if (!searchLocationName) {
@@ -109,6 +96,7 @@ const SearchScreen = ({ navigation, route, currentLocation, onLandmarksUpdate, o
 
 const styles = StyleSheet.create({
   container: {
+    paddingTop: 43,
     flex: 1,
   },
   scrollView: {

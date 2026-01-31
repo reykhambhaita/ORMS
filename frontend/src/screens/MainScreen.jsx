@@ -1,5 +1,5 @@
 // src/screens/MainScreen.jsx
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import MultiModalLocationTracker from '../components/location/MultiModalLocationTracker';
 import CustomBottomNavigation from '../components/navigation/CustomBottomNavigation';
@@ -35,6 +35,22 @@ const MainScreen = ({ navigation, route }) => {
       setActiveTab('Search');
     }
   }, [route.params?.mechanicId]);
+
+  useLayoutEffect(() => {
+    // Ensure header is shown for Home and Profile
+    // We don't set the title here for Home because HomeScreen has a custom header component
+    if (activeTab === 'Home' || activeTab === 'Profile') {
+      navigation.setOptions({
+        headerShown: true,
+      });
+    } else if (activeTab === 'Search') {
+      // Optional: Hide header for search if desired, or set a simple title
+      navigation.setOptions({
+        headerShown: false,
+        headerTitle: 'Search',
+      });
+    }
+  }, [navigation, activeTab]);
 
   const handleLocationUpdate = (location) => {
     setCurrentLocation(location);

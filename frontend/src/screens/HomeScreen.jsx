@@ -13,6 +13,7 @@ const HomeScreen = ({ navigation, route, currentLocation, landmarks, mechanics, 
   // Set up header with personalized greeting
   useLayoutEffect(() => {
     navigation.setOptions({
+      headerShown: true,
       headerTitle: () => (
         <TouchableOpacity
           onPress={() => setModalVisible(true)}

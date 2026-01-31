@@ -2,9 +2,11 @@ import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useState } from 'react';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { TamaguiProvider } from 'tamagui';
 import { ThemeProvider, useTheme } from './src/context/ThemeContext';
 import AuthLoadingScreen from './src/screens/AuthLoading';
+import GetStartedScreen from './src/screens/GetStartedScreen';
 import LoginScreen from './src/screens/LoginScreen';
 import MainScreen from './src/screens/MainScreen';
 import PaymentScreen from './src/screens/PaymentScreen';
@@ -35,6 +37,12 @@ function NavigationStack() {
           <Stack.Screen
             name="AuthLoading"
             component={AuthLoadingScreen}
+            options={{ headerShown: false }}
+          />
+
+          <Stack.Screen
+            name="GetStarted"
+            component={GetStartedScreen}
             options={{ headerShown: false }}
           />
 
@@ -139,10 +147,12 @@ export default function App() {
   }, []);
 
   return (
-    <TamaguiProvider config={config} defaultTheme="light">
-      <ThemeProvider>
-        <NavigationStack />
-      </ThemeProvider>
-    </TamaguiProvider>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <TamaguiProvider config={config} defaultTheme="light">
+        <ThemeProvider>
+          <NavigationStack />
+        </ThemeProvider>
+      </TamaguiProvider>
+    </GestureHandlerRootView>
   );
 }

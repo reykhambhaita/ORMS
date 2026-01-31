@@ -55,7 +55,7 @@ const AuthLoadingScreen = ({ navigation }) => {
           console.log('Token invalid, redirecting to login');
           setStatusMessage('Session expired');
           setTimeout(() => {
-            navigation.replace('Login');
+            navigation.replace('GetStarted');
           }, 1500);
         }
       } else {
@@ -63,7 +63,7 @@ const AuthLoadingScreen = ({ navigation }) => {
         console.log('Not authenticated, redirecting to login');
         setStatusMessage('Please log in');
         setTimeout(() => {
-          navigation.replace('Login');
+          navigation.replace('GetStarted');
         }, 1500);
       }
     } catch (error) {
@@ -87,7 +87,7 @@ const AuthLoadingScreen = ({ navigation }) => {
 
       // If no cached credentials, go to login
       setTimeout(() => {
-        navigation.replace('Login');
+        navigation.replace('GetStarted');
       }, 1500);
     }
   };
@@ -99,7 +99,7 @@ const AuthLoadingScreen = ({ navigation }) => {
   return (
     <View style={styles.container}>
       <View style={styles.logoContainer}>
-        <Text style={styles.logoText}>rexGO</Text>
+        <Text style={styles.logoText}>ORMS</Text>
       </View>
 
       {/* Loading Indicator */}
