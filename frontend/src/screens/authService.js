@@ -538,6 +538,15 @@ class AuthService {
     });
   }
 
+  async updateMechanicUPI(upiId) {
+    return await this.authenticatedRequest('/api/mechanics/upi', {
+      method: 'PATCH',
+      body: JSON.stringify({
+        upiId,
+      }),
+    });
+  }
+
   async getNearbyMechanics(latitude, longitude, radius = 10000) {
     try {
       await this.initialize();
@@ -709,9 +718,62 @@ class AuthService {
     });
   }
 
+  async createUPIPayment(amount, mechanicId, description = '') {
+    return await this.authenticatedRequest('/api/payments/create-upi-payment', {
+      method: 'POST',
+      body: JSON.stringify({
+        amount,
+        mechanicId,
+        description
+      })
+    });
+  }
+
+  async verifyUPIPayment(paymentId, upiTransactionId, upiResponse, status) {
+    return await this.authenticatedRequest('/api/payments/verify-upi-payment', {
+      method: 'POST',
+      body: JSON.stringify({
+        paymentId,
+        upiTransactionId,
+        upiResponse,
+        status
+      })
+    });
+  }
+
   async getPaymentHistory() {
     return await this.authenticatedRequest('/api/payments/history', {
       method: 'GET'
+    });
+  }
+
+  // === UPI DEEP LINK PAYMENT METHODS (New Expo-compatible approach) ===
+
+  async createUPIPaymentOrder(amount, mechanicId, description = '') {
+    return await this.authenticatedRequest('/api/payments/upi/create-order', {
+      method: 'POST',
+      body: JSON.stringify({
+        amount,
+        mechanicId,
+        description
+      })
+    });
+  }
+
+  async getPaymentStatus(transactionId) {
+    return await this.authenticatedRequest(`/api/payments/upi/status/${transactionId}`, {
+      method: 'GET'
+    });
+  }
+
+  async manualVerifyPayment(transactionId, status, upiTransactionId = '') {
+    return await this.authenticatedRequest('/api/payments/upi/manual-verify', {
+      method: 'POST',
+      body: JSON.stringify({
+        transactionId,
+        status,
+        upiTransactionId
+      })
     });
   }
 

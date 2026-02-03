@@ -24,6 +24,7 @@ const RoleSelectionScreen = ({ navigation, route }) => {
   const [role, setRole] = useState('user');
   const [mechanicName, setMechanicName] = useState('');
   const [mechanicPhone, setMechanicPhone] = useState('');
+  const [mechanicUpiId, setMechanicUpiId] = useState('');
   const [loading, setLoading] = useState(false);
 
   if (!fontsLoaded) {
@@ -49,6 +50,7 @@ const RoleSelectionScreen = ({ navigation, route }) => {
     const mechanicData = role === 'mechanic' ? {
       name: mechanicName,
       phone: mechanicPhone,
+      upiId: mechanicUpiId || null,
       specialties: [],
       available: true
     } : undefined;
@@ -147,6 +149,19 @@ const RoleSelectionScreen = ({ navigation, route }) => {
                     value={mechanicPhone}
                     onChangeText={setMechanicPhone}
                     keyboardType="phone-pad"
+                    editable={!loading}
+                    style={styles.inputField}
+                  />
+                </View>
+
+                <View style={styles.inputContainer}>
+                  <Text style={styles.inputLabel}>UPI ID (OPTIONAL)</Text>
+                  <TextInput
+                    placeholder="username@bank"
+                    placeholderTextColor="#999"
+                    value={mechanicUpiId}
+                    onChangeText={setMechanicUpiId}
+                    autoCapitalize="none"
                     editable={!loading}
                     style={styles.inputField}
                   />

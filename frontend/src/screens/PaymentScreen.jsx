@@ -1,9 +1,10 @@
 // src/screens/PaymentScreen.jsx
 import { RussoOne_400Regular, useFonts } from '@expo-google-fonts/russo-one';
-import { useState } from 'react';
+import * as Linking from 'expo-linking';
+import { useEffect, useState } from 'react';
 import {
-  ActivityIndicator,
-  Alert,
+  Image,
+  Modal,
   ScrollView,
   StyleSheet,
   Text,
@@ -11,6 +12,8 @@ import {
   TouchableOpacity,
   View
 } from 'react-native';
+import QRScannerModal from '../components/payment/QRScannerModal';
+import usePaymentPolling from '../hooks/usePaymentPolling';
 import authService from './authService';
 
 const PaymentScreen = ({ route, navigation }) => {
@@ -18,12 +21,89 @@ const PaymentScreen = ({ route, navigation }) => {
     RussoOne_400Regular,
   });
 
-  const { mechanicId, mechanicName, mechanicPhone } = route.params || {};
+  const { mechanicId, mechanicName, mechanicPhone, upiId, upiQrCode } = route.params || {};
 
   const [amount, setAmount] = useState('');
   const [description, setDescription] = useState('');
   const [loading, setLoading] = useState(false);
+  const [paymentState, setPaymentState] = useState('idle'); // idle | creating | waiting | polling | completed | failed
+  const [transactionId, setTransactionId] = useState(null);
+  const [timeRemaining, setTimeRemaining] = useState(null);
+  const [showScanner, setShowScanner] = useState(false);
+  const [showExpandedQR, setShowExpandedQR] = useState(false);
 
+  const { paymentStatus, isPolling, error: pollingError, startPolling, stopPolling, reset } = usePaymentPolling();
+
+  // Handle payment status updates from polling
+  useEffect(() => {
+    if (paymentStatus) {
+      console.log('Payment status updated:', paymentStatus.status);
+
+      if (paymentStatus.status === 'completed') {
+        setPaymentState('completed');
+        setLoading(false);
+        stopPolling();
+
+        Alert.alert(
+          'Payment Successful',
+          `Payment of ₹${paymentStatus.amount.toFixed(2)} completed successfully!`,
+          [{ text: 'OK', onPress: () => navigation.goBack() }]
+        );
+      } else if (paymentStatus.status === 'failed') {
+        setPaymentState('failed');
+        setLoading(false);
+        stopPolling();
+
+        Alert.alert('Payment Failed', 'The payment was not successful. Please try again.');
+      } else if (paymentStatus.status === 'expired') {
+        setPaymentState('failed');
+        setLoading(false);
+        stopPolling();
+
+        Alert.alert('Payment Expired', 'The payment window has expired. Please create a new payment.');
+      } else if (paymentStatus.status === 'cancelled') {
+        setPaymentState('failed');
+        setLoading(false);
+        stopPolling();
+
+        Alert.alert('Payment Cancelled', 'The payment was cancelled.');
+      }
+    }
+  }, [paymentStatus]);
+
+  // Update time remaining countdown
+  useEffect(() => {
+    if (paymentStatus && paymentStatus.expiresAt && paymentState === 'polling') {
+      const interval = setInterval(() => {
+        const remaining = new Date(paymentStatus.expiresAt) - new Date();
+        if (remaining > 0) {
+          setTimeRemaining(Math.floor(remaining / 1000));
+        } else {
+          setTimeRemaining(0);
+          clearInterval(interval);
+        }
+      }, 1000);
+
+      return () => clearInterval(interval);
+    }
+  }, [paymentStatus, paymentState]);
+
+  // Handle polling errors
+  useEffect(() => {
+    if (pollingError) {
+      console.error('Polling error:', pollingError);
+      // Don't stop polling on network errors, just log them
+    }
+  }, [pollingError]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      stopPolling();
+    };
+  }, []);
+
+  // Early return after all hooks are called (React Rules of Hooks)
   if (!fontsLoaded) {
     return null;
   }
@@ -43,78 +123,200 @@ const PaymentScreen = ({ route, navigation }) => {
 
     Alert.alert(
       'Confirm Payment',
-      `Pay $${paymentAmount.toFixed(2)} to ${mechanicName}?`,
+      `Pay ₹${paymentAmount.toFixed(2)} to ${mechanicName}?`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
-          text: 'Pay',
+          text: 'Pay with UPI',
           onPress: async () => {
-            setLoading(true);
-
-            try {
-              // Create PayPal order
-              const orderResult = await authService.createPayPalOrder(
-                paymentAmount,
-                mechanicId,
-                description || `Payment to ${mechanicName}`
-              );
-
-              if (!orderResult.success) {
-                throw new Error(orderResult.error || 'Failed to create payment order');
-              }
-
-              const { orderId, paymentId } = orderResult.data;
-
-              // In a real app, you would open PayPal checkout here
-              // For now, we'll simulate immediate capture
-              Alert.alert(
-                'PayPal Integration',
-                'In a production app, PayPal checkout would open here. For testing, we\'ll simulate payment completion.',
-                [
-                  { text: 'Cancel', style: 'cancel', onPress: () => setLoading(false) },
-                  {
-                    text: 'Simulate Payment',
-                    onPress: async () => {
-                      try {
-                        // Capture the payment
-                        const captureResult = await authService.capturePayPalPayment(
-                          orderId,
-                          paymentId
-                        );
-
-                        setLoading(false);
-
-                        if (captureResult.success) {
-                          Alert.alert(
-                            'Payment Successful',
-                            `Payment of $${paymentAmount.toFixed(2)} completed!`,
-                            [
-                              {
-                                text: 'OK',
-                                onPress: () => navigation.goBack()
-                              }
-                            ]
-                          );
-                        } else {
-                          Alert.alert('Payment Failed', captureResult.error || 'Payment capture failed');
-                        }
-                      } catch (error) {
-                        setLoading(false);
-                        Alert.alert('Error', error.message);
-                      }
-                    }
-                  }
-                ]
-              );
-            } catch (error) {
-              setLoading(false);
-              console.error('Payment error:', error);
-              Alert.alert('Payment Error', error.message);
-            }
+            await initiateUPIPayment(paymentAmount);
           }
         }
       ]
     );
+  };
+
+  const initiateUPIPayment = async (paymentAmount) => {
+    setLoading(true);
+    setPaymentState('creating');
+
+    try {
+      // Step 1: Create payment order on backend
+      const orderResult = await authService.createUPIPaymentOrder(
+        paymentAmount,
+        mechanicId,
+        description || `Payment to ${mechanicName}`
+      );
+
+      if (!orderResult.success) {
+        throw new Error(orderResult.error || 'Failed to create payment order');
+      }
+
+      const { transactionId: txnId, expiresAt } = orderResult.data;
+      setTransactionId(txnId);
+
+      // Step 2: Determine VPA (UPI address)
+      let vpa = null;
+
+      if (upiId) {
+        // Use mechanic's UPI ID if available
+        vpa = upiId;
+      } else if (mechanicPhone) {
+        // Use phone number as UPI address (phone@paytm format is widely supported)
+        // Remove any non-digit characters
+        const cleanPhone = mechanicPhone.replace(/\D/g, '');
+        if (cleanPhone.length === 10) {
+          vpa = `${cleanPhone}@pthdfc`; // or @ybl, @oksbi, etc.
+        }
+      }
+
+      if (!vpa) {
+        setLoading(false);
+        setPaymentState('idle');
+        Alert.alert(
+          'Payment Not Available',
+          'This mechanic has not set up their UPI payment details yet. Please use an alternative payment method.'
+        );
+        return;
+      }
+
+      // Step 3: Construct UPI deep link
+      const upiUrl = constructUPIUrl({
+        vpa,
+        name: mechanicName,
+        amount: paymentAmount,
+        transactionId: txnId,
+        note: description || `Payment to ${mechanicName}`
+      });
+
+      console.log('UPI URL:', upiUrl);
+      console.log('Using VPA:', vpa);
+
+      // Step 4: Check if UPI apps are available
+      const canOpen = await Linking.canOpenURL(upiUrl);
+
+      if (!canOpen) {
+        setLoading(false);
+        setPaymentState('idle');
+        Alert.alert(
+          'No UPI App Found',
+          'No UPI supporting apps found on this device. Please install a UPI app like Google Pay, PhonePe, or Paytm.'
+        );
+        return;
+      }
+
+      // Step 5: Launch UPI app
+      setPaymentState('waiting');
+      await Linking.openURL(upiUrl);
+
+      // Step 6: Start polling for payment status
+      setPaymentState('polling');
+      setLoading(false); // Remove loading spinner, show polling state instead
+      startPolling(txnId);
+
+      // Show info about polling
+      Alert.alert(
+        'Payment Initiated',
+        'Complete the payment in your UPI app. We\'ll automatically detect when it\'s done.',
+        [{ text: 'OK' }]
+      );
+
+    } catch (error) {
+      setLoading(false);
+      setPaymentState('idle');
+      console.error('Payment error:', error);
+      Alert.alert('Payment Error', error.message);
+    }
+  };
+
+  const constructUPIUrl = ({ vpa, name, amount, transactionId, note }) => {
+    const params = new URLSearchParams({
+      pa: vpa,                              // Payee VPA
+      pn: encodeURIComponent(name),         // Payee name
+      am: amount.toString(),                // Amount
+      tr: transactionId,                    // Transaction reference
+      tn: encodeURIComponent(note),         // Transaction note
+      cu: 'INR'                             // Currency
+    });
+
+    return `upi://pay?${params.toString()}`;
+  };
+
+  const handleQRScan = (upiUrl) => {
+    setShowScanner(false);
+    try {
+      const url = new URL(upiUrl);
+      const params = new URLSearchParams(url.search);
+
+      const vpa = params.get('pa');
+      const name = params.get('pn');
+      const am = params.get('am');
+      const tn = params.get('tn');
+
+      if (vpa) {
+        if (am) setAmount(am);
+        if (tn) setDescription(decodeURIComponent(tn));
+
+        Alert.alert(
+          'QR Scanned',
+          `Payload for ${name || vpa} detected. Proceed with payment?`,
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'Proceed', onPress: () => initiateUPIPayment(parseFloat(am || amount || 0)) }
+          ]
+        );
+      }
+    } catch (e) {
+      console.error('QR Parse error:', e);
+      Alert.alert('Error', 'Could not parse UPI QR code');
+    }
+  };
+
+  const handleCancelPayment = () => {
+    if (isPolling) {
+      Alert.alert(
+        'Cancel Payment',
+        'Are you sure you want to stop checking for payment status?',
+        [
+          { text: 'No', style: 'cancel' },
+          {
+            text: 'Yes',
+            onPress: () => {
+              stopPolling();
+              reset();
+              setPaymentState('idle');
+              setTransactionId(null);
+              setTimeRemaining(null);
+            }
+          }
+        ]
+      );
+    } else {
+      navigation.goBack();
+    }
+  };
+
+  const formatTime = (seconds) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  const getStatusMessage = () => {
+    switch (paymentState) {
+      case 'creating':
+        return 'Creating payment order...';
+      case 'waiting':
+        return 'Opening UPI app...';
+      case 'polling':
+        return 'Waiting for payment confirmation...';
+      case 'completed':
+        return 'Payment completed!';
+      case 'failed':
+        return 'Payment failed';
+      default:
+        return '';
+    }
   };
 
   return (
@@ -125,8 +327,6 @@ const PaymentScreen = ({ route, navigation }) => {
         bounces={false}
         showsVerticalScrollIndicator={false}
       >
-
-
         {/* Form Section */}
         <View style={styles.formSection}>
           <View style={styles.formContent}>
@@ -137,13 +337,33 @@ const PaymentScreen = ({ route, navigation }) => {
               {mechanicPhone && (
                 <Text style={styles.mechanicPhone}>📞 {mechanicPhone}</Text>
               )}
+              {upiId && (
+                <Text style={styles.mechanicUpi}>💳 UPI: {upiId}</Text>
+              )}
+              {!upiId && mechanicPhone && (
+                <Text style={styles.mechanicUpi}>💳 UPI: {mechanicPhone.replace(/\D/g, '')}@paytm</Text>
+              )}
+
+              {upiQrCode && paymentState === 'idle' && (
+                <TouchableOpacity
+                  style={styles.qrBadge}
+                  onPress={() => setShowExpandedQR(true)}
+                  activeOpacity={0.7}
+                >
+                  <Image source={{ uri: upiQrCode }} style={styles.miniQr} />
+                  <View>
+                    <Text style={styles.qrHint}>Scan to Pay</Text>
+                    <Text style={styles.tapToExpand}>Tap to expand</Text>
+                  </View>
+                </TouchableOpacity>
+              )}
             </View>
 
             {/* Amount Input */}
             <View style={styles.inputContainer}>
-              <Text style={styles.inputLabel}>AMOUNT (USD)</Text>
+              <Text style={styles.inputLabel}>AMOUNT (INR)</Text>
               <View style={styles.amountInputWrapper}>
-                <Text style={styles.currencySymbol}>$</Text>
+                <Text style={styles.currencySymbol}>₹</Text>
                 <TextInput
                   style={styles.amountInput}
                   placeholder="0.00"
@@ -151,7 +371,7 @@ const PaymentScreen = ({ route, navigation }) => {
                   value={amount}
                   onChangeText={setAmount}
                   keyboardType="decimal-pad"
-                  editable={!loading}
+                  editable={!loading && paymentState === 'idle'}
                 />
               </View>
             </View>
@@ -168,44 +388,121 @@ const PaymentScreen = ({ route, navigation }) => {
                 multiline
                 numberOfLines={3}
                 textAlignVertical="top"
-                editable={!loading}
+                editable={!loading && paymentState === 'idle'}
               />
             </View>
 
+            {/* Payment Status Info */}
+            {paymentState !== 'idle' && (
+              <View style={styles.statusBox}>
+                <Text style={styles.statusText}>{getStatusMessage()}</Text>
+                {isPolling && timeRemaining !== null && (
+                  <Text style={styles.timerText}>
+                    Time remaining: {formatTime(timeRemaining)}
+                  </Text>
+                )}
+                {isPolling && (
+                  <ActivityIndicator color="#111111" style={{ marginTop: 12 }} />
+                )}
+              </View>
+            )}
+
             {/* Payment Info */}
-            <View style={styles.infoBox}>
-              <Text style={styles.infoText}>
-                💳 This payment will be processed through PayPal securely.
-              </Text>
-            </View>
+            {paymentState === 'idle' && (
+              <View style={styles.infoBox}>
+                <Text style={styles.infoText}>
+                  📱 This payment will be processed securely via UPI.
+                  {'\n\n'}
+                  {upiId
+                    ? `Payment will be sent to the mechanic's UPI ID: ${upiId}`
+                    : mechanicPhone
+                      ? `Payment will be sent to the mechanic's phone number via UPI.`
+                      : 'Payment details not available.'
+                  }
+                  {'\n\n'}
+                  After clicking Pay, you'll be redirected to your UPI app. Complete the payment there, and we'll automatically detect when it's done.
+                </Text>
+              </View>
+            )}
 
             {/* Pay Button */}
-            <TouchableOpacity
-              style={[styles.payButton, loading && styles.buttonDisabled]}
-              onPress={handlePayment}
-              disabled={loading}
-              activeOpacity={0.8}
-            >
-              {loading ? (
-                <ActivityIndicator color="#fff" />
-              ) : (
-                <Text style={styles.payButtonText}>
-                  pay ${amount ? parseFloat(amount).toFixed(2) : '0.00'}
-                </Text>
-              )}
-            </TouchableOpacity>
+            {paymentState === 'idle' && (
+              <TouchableOpacity
+                style={[styles.payButton, loading && styles.buttonDisabled]}
+                onPress={handlePayment}
+                disabled={loading}
+                activeOpacity={0.8}
+              >
+                {loading ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text style={styles.payButtonText}>
+                    pay ₹{amount ? parseFloat(amount).toFixed(2) : '0.00'}
+                  </Text>
+                )}
+              </TouchableOpacity>
+            )}
 
             {/* Cancel Button */}
             <TouchableOpacity
               style={styles.cancelButton}
-              onPress={() => navigation.goBack()}
-              disabled={loading}
+              onPress={handleCancelPayment}
+              disabled={loading && paymentState === 'creating'}
             >
-              <Text style={styles.cancelButtonText}>Cancel</Text>
+              <Text style={styles.cancelButtonText}>
+                {isPolling ? 'Stop Checking' : 'Cancel'}
+              </Text>
             </TouchableOpacity>
+
+            {/* Scan QR Button */}
+            {paymentState === 'idle' && (
+              <TouchableOpacity
+                style={styles.scanQrButton}
+                onPress={() => setShowScanner(true)}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="qr-code-outline" size={20} color="#111" style={{ marginRight: 8 }} />
+                <Text style={styles.scanQrButtonText}>Scan Mechanic's QR</Text>
+              </TouchableOpacity>
+            )}
           </View>
         </View>
       </ScrollView>
+
+      {/* Expanded QR Modal */}
+      <Modal
+        visible={showExpandedQR}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowExpandedQR(false)}
+      >
+        <TouchableOpacity
+          style={styles.expandedQrOverlay}
+          activeOpacity={1}
+          onPress={() => setShowExpandedQR(false)}
+        >
+          <View style={styles.expandedQrContent}>
+            <Text style={styles.expandedQrTitle}>Payment QR Code</Text>
+            <View style={styles.largeQrContainer}>
+              <Image source={{ uri: upiQrCode }} style={styles.largeQr} />
+            </View>
+            <Text style={styles.expandedQrHint}>Show this to the user to receive payment</Text>
+            <TouchableOpacity
+              style={styles.closeExpandedButton}
+              onPress={() => setShowExpandedQR(false)}
+            >
+              <Text style={styles.closeExpandedText}>Close</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
+      {/* QR Scanner Modal */}
+      <QRScannerModal
+        visible={showScanner}
+        onClose={() => setShowScanner(false)}
+        onScan={handleQRScan}
+      />
     </View>
   );
 };
@@ -218,7 +515,6 @@ const styles = StyleSheet.create({
   scrollContent: {
     flexGrow: 1,
   },
-
   formSection: {
     flex: 1,
     backgroundColor: '#ffffff',
@@ -256,6 +552,37 @@ const styles = StyleSheet.create({
   mechanicPhone: {
     fontSize: 12,
     color: '#888888',
+  },
+  mechanicUpi: {
+    fontSize: 12,
+    color: '#0284c7',
+    marginTop: 4,
+  },
+  qrBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 12,
+    padding: 8,
+    backgroundColor: '#fff',
+    borderRadius: 8,
+    alignSelf: 'flex-start',
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+  },
+  miniQr: {
+    width: 44,
+    height: 44,
+    marginRight: 10,
+  },
+  qrHint: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#111111',
+  },
+  tapToExpand: {
+    fontSize: 10,
+    color: '#888',
+    marginTop: 2,
   },
   inputContainer: {
     marginBottom: 24,
@@ -297,6 +624,29 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#333',
     minHeight: 50,
+  },
+  statusBox: {
+    backgroundColor: '#f0f9ff',
+    padding: 20,
+    borderRadius: 12,
+    marginBottom: 24,
+    borderLeftWidth: 4,
+    borderLeftColor: '#0284c7',
+    borderWidth: 1,
+    borderColor: '#bae6fd',
+    alignItems: 'center',
+  },
+  statusText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#0c4a6e',
+    textAlign: 'center',
+  },
+  timerText: {
+    fontSize: 12,
+    color: '#075985',
+    marginTop: 8,
+    textAlign: 'center',
   },
   infoBox: {
     backgroundColor: '#f9fafb',
@@ -341,6 +691,74 @@ const styles = StyleSheet.create({
   cancelButtonText: {
     fontSize: 12,
     color: '#6b7280',
+  },
+  scanQrButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 20,
+    paddingVertical: 12,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+    borderRadius: 12,
+    backgroundColor: '#fff',
+  },
+  scanQrButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#111',
+  },
+  expandedQrOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.8)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 30,
+  },
+  expandedQrContent: {
+    backgroundColor: '#fff',
+    borderRadius: 24,
+    padding: 30,
+    alignItems: 'center',
+    width: '100%',
+  },
+  expandedQrTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#111',
+    marginBottom: 20,
+    fontFamily: 'RussoOne_400Regular',
+  },
+  largeQrContainer: {
+    padding: 15,
+    backgroundColor: '#fff',
+    borderRadius: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 10,
+    elevation: 3,
+  },
+  largeQr: {
+    width: 250,
+    height: 250,
+  },
+  expandedQrHint: {
+    fontSize: 12,
+    color: '#888',
+    marginTop: 20,
+    textAlign: 'center',
+  },
+  closeExpandedButton: {
+    marginTop: 30,
+    paddingVertical: 12,
+    paddingHorizontal: 40,
+    backgroundColor: '#111',
+    borderRadius: 12,
+  },
+  closeExpandedText: {
+    color: '#fff',
+    fontWeight: '600',
   },
 });
 

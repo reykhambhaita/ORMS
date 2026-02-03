@@ -616,7 +616,9 @@ const MechanicFinder = forwardRef(({ searchLocation, searchLocationName, onReset
                     navigation.navigate('Payment', {
                       mechanicId: selectedMechanic.id || selectedMechanic._id,
                       mechanicName: selectedMechanic.name,
-                      mechanicPhone: selectedMechanic.phone
+                      mechanicPhone: selectedMechanic.phone,
+                      upiId: selectedMechanic.upiId,
+                      upiQrCode: selectedMechanic.upiQrCode
                     });
                   }}
                 >
