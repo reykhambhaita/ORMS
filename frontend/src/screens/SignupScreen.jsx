@@ -2,6 +2,7 @@
 import { RussoOne_400Regular, useFonts } from '@expo-google-fonts/russo-one';
 import { useState } from 'react';
 import {
+  ActivityIndicator,
   Alert,
   ScrollView,
   StyleSheet,
@@ -10,6 +11,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import authService from './authService';
 
 const SignupScreen = ({ navigation }) => {
   const [fontsLoaded] = useFonts({
@@ -19,20 +21,15 @@ const SignupScreen = ({ navigation }) => {
   const [email, setEmail] = useState('');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
+  const [loading, setLoading] = useState(false);
 
   if (!fontsLoaded) {
     return null;
   }
 
-  const handleContinue = () => {
-    if (!email || !username || !password || !confirmPassword) {
+  const handleSignup = async () => {
+    if (!email || !username || !password) {
       Alert.alert('Error', 'Please fill in all fields');
-      return;
-    }
-
-    if (password !== confirmPassword) {
-      Alert.alert('Error', 'Passwords do not match');
       return;
     }
 
@@ -41,12 +38,17 @@ const SignupScreen = ({ navigation }) => {
       return;
     }
 
-    // Navigate to role selection with user data
-    navigation.navigate('RoleSelection', {
-      email,
-      username,
-      password,
-    });
+    setLoading(true);
+    // Default to 'user' role for initial signup
+    const result = await authService.signup(email, username, password, 'user');
+    setLoading(false);
+
+    if (result.success) {
+      // Navigate to OTP Screen
+      navigation.navigate('OTP', { email });
+    } else {
+      Alert.alert('Signup Failed', result.error);
+    }
   };
 
   return (
@@ -108,26 +110,18 @@ const SignupScreen = ({ navigation }) => {
               />
             </View>
 
-            {/* Confirm Password Input */}
-            <View style={styles.inputContainer}>
-              <Text style={styles.inputLabel}>CONFIRM PASSWORD</Text>
-              <TextInput
-                placeholder="********"
-                placeholderTextColor="#999"
-                value={confirmPassword}
-                onChangeText={setConfirmPassword}
-                secureTextEntry
-                style={styles.inputField}
-              />
-            </View>
-
             {/* Continue Button */}
             <TouchableOpacity
-              onPress={handleContinue}
+              onPress={handleSignup}
               style={styles.continueButton}
               activeOpacity={0.8}
+              disabled={loading}
             >
-              <Text style={styles.continueButtonText}>continue</Text>
+              {loading ? (
+                <ActivityIndicator color="#ffffff" />
+              ) : (
+                <Text style={styles.continueButtonText}>sign up</Text>
+              )}
             </TouchableOpacity>
           </View>
 

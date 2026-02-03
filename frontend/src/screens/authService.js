@@ -56,6 +56,39 @@ class AuthService {
         throw new Error(data.error || 'Signup failed');
       }
 
+      // Note: We don't store auth data here anymore because email needs verification
+      // The JWT will be returned by verifyOTP
+
+      return {
+        success: true,
+        message: data.message,
+        email: data.email,
+        role: data.role
+      };
+    } catch (error) {
+      console.error('Signup error:', error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  async verifyOTP(email, otp) {
+    try {
+      await this.initialize();
+
+      const response = await fetch(`${API_BASE_URL}/api/auth/verify-otp`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ email, otp }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Verification failed');
+      }
+
       await this.storeAuthData(data.token, data.user);
 
       return {
@@ -64,7 +97,35 @@ class AuthService {
         mechanicProfile: data.mechanicProfile
       };
     } catch (error) {
-      console.error('Signup error:', error);
+      console.error('Verify OTP error:', error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  async resendOTP(email) {
+    try {
+      await this.initialize();
+
+      const response = await fetch(`${API_BASE_URL}/api/auth/resend-otp`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ email }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Resend failed');
+      }
+
+      return {
+        success: true,
+        message: data.message
+      };
+    } catch (error) {
+      console.error('Resend OTP error:', error);
       return { success: false, error: error.message };
     }
   }

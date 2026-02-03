@@ -3,12 +3,14 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useState } from 'react';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { TamaguiProvider } from 'tamagui';
 import { ThemeProvider, useTheme } from './src/context/ThemeContext';
 import AuthLoadingScreen from './src/screens/AuthLoading';
 import GetStartedScreen from './src/screens/GetStartedScreen';
 import LoginScreen from './src/screens/LoginScreen';
 import MainScreen from './src/screens/MainScreen';
+import OTPScreen from './src/screens/OTPScreen';
 import PaymentScreen from './src/screens/PaymentScreen';
 import ReviewMechanicScreen from './src/screens/ReviewMechanicScreen';
 import RoleSelectionScreen from './src/screens/RoleSelectionScreen';
@@ -56,6 +58,12 @@ function NavigationStack() {
           <Stack.Screen
             name="Signup"
             component={SignupScreen}
+            options={{ headerShown: false }}
+          />
+
+          <Stack.Screen
+            name="OTP"
+            component={OTPScreen}
             options={{ headerShown: false }}
           />
 
@@ -150,7 +158,9 @@ export default function App() {
     <GestureHandlerRootView style={{ flex: 1 }}>
       <TamaguiProvider config={config} defaultTheme="light">
         <ThemeProvider>
-          <NavigationStack />
+          <SafeAreaProvider>
+            <NavigationStack />
+          </SafeAreaProvider>
         </ThemeProvider>
       </TamaguiProvider>
     </GestureHandlerRootView>

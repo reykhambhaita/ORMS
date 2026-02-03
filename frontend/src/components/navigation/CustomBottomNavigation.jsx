@@ -7,6 +7,7 @@ import Animated, {
   withSpring,
   withTiming
 } from 'react-native-reanimated';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../../context/ThemeContext';
 
 const SPRING_CONFIG = {
@@ -67,6 +68,7 @@ const TabPill = ({ tab, isActive, isLeftOfInactive, isRightOfInactive, onTabPres
 
 const CustomBottomNavigation = ({ activeTab, onTabPress }) => {
   const { theme } = useTheme();
+  const insets = useSafeAreaInsets();
 
   const tabs = [
     { id: 'Home', icon: 'home', label: 'Home' },
@@ -75,7 +77,10 @@ const CustomBottomNavigation = ({ activeTab, onTabPress }) => {
   ];
 
   return (
-    <View style={styles.container}>
+    <View style={[
+      styles.container,
+      { paddingBottom: Math.max(insets.bottom, 12) }
+    ]}>
       <View style={styles.navBar}>
         {tabs.map((tab, index) => {
           const isActive = tab.id === activeTab;
@@ -108,9 +113,9 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     backgroundColor: '#FFFFFF',
-    paddingBottom: 25,
-    paddingTop: 15,
-    paddingHorizontal: 20,
+    paddingBottom: 12,
+    paddingTop: 8,
+    paddingHorizontal: 16,
     borderTopWidth: 1,
     borderTopColor: '#f5f5f5',
     zIndex: 1000,
@@ -130,7 +135,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    height: 56,
+    height: 48,
     backgroundColor: '#111111',
     overflow: 'hidden',
   },

@@ -33,7 +33,7 @@
     "@tamagui/react-native-media-driver": "^1.138.5",
     "@tamagui/shorthands": "^1.138.5",
     "@tamagui/themes": "^1.138.5",
-    "expo": "~53.0.25",
+    "expo": "~53.0.26",
     "expo-auth-session": "~6.2.1",
     "expo-crypto": "~14.1.5",
     "expo-font": "~13.3.2",

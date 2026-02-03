@@ -19,7 +19,7 @@ const RoleSelectionScreen = ({ navigation, route }) => {
   });
 
   // Get user data from previous screen
-  const { email, username, password } = route.params;
+  const { email, username } = route.params;
 
   const [role, setRole] = useState('user');
   const [mechanicName, setMechanicName] = useState('');
@@ -53,14 +53,14 @@ const RoleSelectionScreen = ({ navigation, route }) => {
       available: true
     } : undefined;
 
-    const result = await authService.signup(email, username, password, role, mechanicData);
+    const result = await authService.updateProfile({ role, mechanicData });
     setLoading(false);
 
     if (result.success) {
-      console.log('Signup successful:', result.user);
+      console.log('Role selection successful:', result.user);
       navigation.replace('Main');
     } else {
-      Alert.alert('Signup Failed', result.error);
+      Alert.alert('Selection Failed', result.error);
     }
   };
 
