@@ -23,7 +23,11 @@ import {
   capturePayPalPaymentHandler,
   createPayPalOrderHandler,
   createUPIPaymentHandler,
+  createUPIPaymentOrderHandler,
+  expireOldPaymentsHandler,
   getPaymentHistoryHandler,
+  getPaymentStatusHandler,
+  manualVerifyPaymentHandler,
   verifyUPIPaymentHandler
 } from './controllers/paymentController.js';
 import {
@@ -221,6 +225,12 @@ app.post('/api/payments/capture', authenticateToken, capturePayPalPaymentHandler
 app.post('/api/payments/create-upi-payment', authenticateToken, createUPIPaymentHandler);
 app.post('/api/payments/verify-upi-payment', authenticateToken, verifyUPIPaymentHandler);
 app.get('/api/payments/history', authenticateToken, getPaymentHistoryHandler);
+
+// UPI Deep Link Routes (New Expo-compatible approach)
+app.post('/api/payments/upi/create-order', authenticateToken, createUPIPaymentOrderHandler);
+app.get('/api/payments/upi/status/:transactionId', authenticateToken, getPaymentStatusHandler);
+app.post('/api/payments/upi/manual-verify', authenticateToken, manualVerifyPaymentHandler);
+app.post('/api/payments/upi/expire-old', authenticateToken, expireOldPaymentsHandler);
 
 
 

@@ -263,3 +263,224 @@ export const getPaymentHistoryHandler = async (req, res) => {
     res.status(500).json({ error: 'Failed to get payment history' });
   }
 };
+
+/**
+ * Create UPI Payment Order (Deep Link Approach)
+ * POST /api/payments/upi/create-order
+ * Body: { amount, mechanicId, description }
+ */
+export const createUPIPaymentOrderHandler = async (req, res) => {
+  try {
+    const { amount, mechanicId, description } = req.body;
+
+    if (!amount || !mechanicId) {
+      return res.status(400).json({ error: 'Amount and mechanic ID are required' });
+    }
+
+    if (amount <= 0) {
+      return res.status(400).json({ error: 'Amount must be greater than 0' });
+    }
+
+    // Generate unique transaction ID
+    const transactionId = `TXN${Date.now()}${Math.random().toString(36).substring(2, 9).toUpperCase()}`;
+
+    // Set expiry time (15 minutes from now)
+    const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
+
+    // Check for duplicate recent pending payments (idempotency)
+    const recentPending = await Payment.findOne({
+      userId: req.userId,
+      mechanicId,
+      amount,
+      status: 'pending',
+      createdAt: { $gte: new Date(Date.now() - 5 * 60 * 1000) } // Last 5 minutes
+    });
+
+    if (recentPending && recentPending.transactionId) {
+      // Return existing transaction
+      return res.json({
+        success: true,
+        data: {
+          transactionId: recentPending.transactionId,
+          amount: recentPending.amount,
+          expiresAt: recentPending.expiresAt,
+          isExisting: true
+        }
+      });
+    }
+
+    // Create new payment record
+    const payment = new Payment({
+      userId: req.userId,
+      mechanicId,
+      amount,
+      description: description || '',
+      transactionId,
+      status: 'pending',
+      expiresAt,
+      metadata: {
+        createdVia: 'upi-deeplink',
+        userAgent: req.headers['user-agent'],
+        ip: req.ip
+      }
+    });
+
+    await payment.save();
+
+    res.json({
+      success: true,
+      data: {
+        transactionId,
+        amount,
+        expiresAt,
+        isExisting: false
+      }
+    });
+  } catch (error) {
+    console.error('Create UPI payment order error:', error);
+    res.status(500).json({ error: 'Failed to create payment order' });
+  }
+};
+
+/**
+ * Get Payment Status (for polling)
+ * GET /api/payments/upi/status/:transactionId
+ */
+export const getPaymentStatusHandler = async (req, res) => {
+  try {
+    const { transactionId } = req.params;
+
+    if (!transactionId) {
+      return res.status(400).json({ error: 'Transaction ID is required' });
+    }
+
+    // Find payment
+    const payment = await Payment.findOne({ transactionId })
+      .populate('mechanicId', 'name phone upiId');
+
+    if (!payment) {
+      return res.status(404).json({ error: 'Payment not found' });
+    }
+
+    // Verify ownership
+    if (payment.userId.toString() !== req.userId) {
+      return res.status(403).json({ error: 'Unauthorized' });
+    }
+
+    // Check if payment has expired
+    if (payment.status === 'pending' && payment.expiresAt && new Date() > payment.expiresAt) {
+      payment.status = 'expired';
+      await payment.save();
+    }
+
+    // Update status check metadata
+    payment.statusCheckedAt = new Date();
+    payment.attempts = (payment.attempts || 0) + 1;
+    await payment.save();
+
+    // Return status
+    res.json({
+      success: true,
+      data: {
+        transactionId: payment.transactionId,
+        status: payment.status,
+        amount: payment.amount,
+        description: payment.description,
+        mechanicName: payment.mechanicId?.name,
+        mechanicUpiId: payment.mechanicId?.upiId,
+        createdAt: payment.createdAt,
+        expiresAt: payment.expiresAt,
+        completedAt: payment.completedAt,
+        attempts: payment.attempts
+      }
+    });
+  } catch (error) {
+    console.error('Get payment status error:', error);
+    res.status(500).json({ error: 'Failed to get payment status' });
+  }
+};
+
+/**
+ * Manual Payment Verification (for testing/admin)
+ * POST /api/payments/upi/manual-verify
+ * Body: { transactionId, status, upiTransactionId }
+ */
+export const manualVerifyPaymentHandler = async (req, res) => {
+  try {
+    const { transactionId, status, upiTransactionId } = req.body;
+
+    if (!transactionId || !status) {
+      return res.status(400).json({ error: 'Transaction ID and status are required' });
+    }
+
+    if (!['completed', 'failed', 'cancelled'].includes(status)) {
+      return res.status(400).json({ error: 'Invalid status' });
+    }
+
+    const payment = await Payment.findOne({ transactionId });
+
+    if (!payment) {
+      return res.status(404).json({ error: 'Payment not found' });
+    }
+
+    // Verify ownership
+    if (payment.userId.toString() !== req.userId) {
+      return res.status(403).json({ error: 'Unauthorized' });
+    }
+
+    // Don't allow updating already completed/failed payments
+    if (['completed', 'failed', 'refunded'].includes(payment.status)) {
+      return res.status(400).json({ error: 'Payment already finalized' });
+    }
+
+    // Update payment
+    payment.status = status;
+    if (upiTransactionId) {
+      payment.upiTransactionId = upiTransactionId;
+    }
+    if (status === 'completed') {
+      payment.completedAt = new Date();
+    }
+
+    await payment.save();
+
+    res.json({
+      success: true,
+      data: {
+        transactionId: payment.transactionId,
+        status: payment.status
+      }
+    });
+  } catch (error) {
+    console.error('Manual verify payment error:', error);
+    res.status(500).json({ error: 'Failed to verify payment' });
+  }
+};
+
+/**
+ * Expire old pending payments (background job)
+ * POST /api/payments/upi/expire-old
+ */
+export const expireOldPaymentsHandler = async (req, res) => {
+  try {
+    const result = await Payment.updateMany(
+      {
+        status: 'pending',
+        expiresAt: { $lt: new Date() }
+      },
+      {
+        $set: { status: 'expired' }
+      }
+    );
+
+    res.json({
+      success: true,
+      data: {
+        expiredCount: result.modifiedCount
+      }
+    });
+  } catch (error) {
+    console.error('Expire old payments error:', error);
+    res.status(500).json({ error: 'Failed to expire old payments' });
+  }
+};

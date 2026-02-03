@@ -271,6 +271,7 @@ const paymentSchema = new mongoose.Schema({
     type: Number,
     required: true
   },
+  // Legacy PayPal fields (optional)
   paypalOrderId: {
     type: String,
     required: false
@@ -278,16 +279,31 @@ const paymentSchema = new mongoose.Schema({
   paypalCaptureId: {
     type: String
   },
+
+  // UPI Payment fields
+  transactionId: {
+    type: String,
+    unique: true,
+    sparse: true, // Allow null values but enforce uniqueness when present
+    index: true
+  },
   upiTransactionId: {
     type: String
   },
   upiResponse: {
     type: String
   },
+
+  // Payment metadata
+  metadata: {
+    type: mongoose.Schema.Types.Mixed,
+    default: {}
+  },
   status: {
     type: String,
-    enum: ['pending', 'completed', 'failed', 'refunded'],
-    default: 'pending'
+    enum: ['pending', 'completed', 'failed', 'refunded', 'expired', 'cancelled'],
+    default: 'pending',
+    index: true
   },
   description: {
     type: String,
@@ -299,6 +315,19 @@ const paymentSchema = new mongoose.Schema({
   },
   completedAt: {
     type: Date
+  },
+
+  // Expiry and polling fields
+  expiresAt: {
+    type: Date,
+    index: true
+  },
+  statusCheckedAt: {
+    type: Date
+  },
+  attempts: {
+    type: Number,
+    default: 0
   }
 });
 
