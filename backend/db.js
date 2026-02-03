@@ -1,6 +1,7 @@
 // backend/db.js
 import crypto from 'crypto';
 import mongoose from 'mongoose';
+import QRCode from 'qrcode';
 
 // --- ENCRYPTION SETUP ---
 const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY;
@@ -160,11 +161,23 @@ const mechanicSchema = new mongoose.Schema({
     trim: true,
     default: null
   },
+  upiQrCode: {
+    type: String, // Base64 encoded QR code
+    default: null
+  },
   createdAt: {
     type: Date,
     default: Date.now
   }
 });
+
+// Virtual for decrypted UPI ID
+mechanicSchema.virtual('decryptedUpiId').get(function () {
+  return this.upiId ? decrypt(this.upiId) : null;
+});
+
+mechanicSchema.set('toJSON', { virtuals: true });
+mechanicSchema.set('toObject', { virtuals: true });
 
 mechanicSchema.index({ location: '2dsphere' });
 
@@ -453,6 +466,33 @@ export const connectDB = async () => {
   }
 };
 
+// Helper to generate UPI QR Code
+export const generateUPIQRCode = async (upiId, name) => {
+  if (!upiId) return null;
+
+  // Format: upi://pay?pa=upiid@bank&pn=Name&cu=INR
+  const params = new URLSearchParams({
+    pa: upiId,
+    pn: name || 'Mechanic',
+    cu: 'INR'
+  });
+  const upiUrl = `upi://pay?${params.toString()}`;
+
+  try {
+    return await QRCode.toDataURL(upiUrl, {
+      color: {
+        dark: '#111111',
+        light: '#ffffff'
+      },
+      width: 512,
+      margin: 2
+    });
+  } catch (err) {
+    console.error('QR Code generation error:', err);
+    return null;
+  }
+};
+
 // --- FUNCTIONS ---
 
 // Location Functions
@@ -597,8 +637,26 @@ export const createMechanicProfile = async (userId, mechanicData) => {
     },
     specialties: mechanicData.specialties || [],
     available: mechanicData.available !== undefined ? mechanicData.available : true,
-    upiId: mechanicData.upiId || null
+    upiId: mechanicData.upiId ? encrypt(mechanicData.upiId) : null,
+    upiQrCode: mechanicData.upiId ? await generateUPIQRCode(mechanicData.upiId, mechanicData.name) : null
   });
+
+  return await mechanic.save();
+};
+
+export const updateMechanicUPI = async (userId, upiId) => {
+  await connectDB();
+
+  const mechanic = await Mechanic.findOne({ userId });
+  if (!mechanic) throw new Error('Mechanic profile not found');
+
+  if (upiId) {
+    mechanic.upiId = encrypt(upiId);
+    mechanic.upiQrCode = await generateUPIQRCode(upiId, mechanic.name);
+  } else {
+    mechanic.upiId = null;
+    mechanic.upiQrCode = null;
+  }
 
   return await mechanic.save();
 };

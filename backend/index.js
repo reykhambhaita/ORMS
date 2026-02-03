@@ -17,7 +17,8 @@ import {
   getMechanicProfileHandler,
   getNearbyMechanicsHandler,
   updateMechanicAvailabilityHandler,
-  updateMechanicLocationHandler
+  updateMechanicLocationHandler,
+  updateMechanicUPIHandler
 } from './controllers/mechanicController.js';
 import {
   capturePayPalPaymentHandler,
@@ -208,6 +209,13 @@ app.patch(
   authenticateToken,
   requireMechanic,
   updateMechanicAvailabilityHandler
+);
+
+app.patch(
+  '/api/mechanics/upi',
+  authenticateToken,
+  requireMechanic,
+  updateMechanicUPIHandler
 );
 
 app.get('/api/mechanics/nearby', optionalAuth, getNearbyMechanicsHandler);

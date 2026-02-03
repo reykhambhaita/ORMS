@@ -53,7 +53,8 @@ export const createMechanicProfileHandler = async (req, res) => {
         specialties: mechanic.specialties,
         rating: mechanic.rating,
         available: mechanic.available,
-        upiId: mechanic.upiId,
+        upiId: mechanic.decryptedUpiId,
+        upiQrCode: mechanic.upiQrCode,
         createdAt: mechanic.createdAt
       }
     });
@@ -146,7 +147,8 @@ export const getMechanicProfileHandler = async (req, res) => {
         specialties: mechanic.specialties,
         rating: mechanic.rating,
         available: mechanic.available,
-        upiId: mechanic.upiId,
+        upiId: mechanic.decryptedUpiId,
+        upiQrCode: mechanic.upiQrCode,
         user: {
           username: mechanic.userId.username,
           email: mechanic.userId.email
@@ -253,7 +255,8 @@ export const getNearbyMechanicsHandler = async (req, res) => {
       specialties: mechanic.specialties,
       rating: mechanic.rating,
       available: mechanic.available,
-      upiId: mechanic.upiId,
+      upiId: mechanic.decryptedUpiId,
+      upiQrCode: mechanic.upiQrCode,
       username: mechanic.userId?.username || 'Unknown'
     }));
 
@@ -271,5 +274,28 @@ export const getNearbyMechanicsHandler = async (req, res) => {
       error: 'Failed to get nearby mechanics',
       message: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
+  }
+};
+/**
+ * Update mechanic UPI ID
+ * PATCH /api/mechanics/upi
+ * Body: { upiId }
+ */
+export const updateMechanicUPIHandler = async (req, res) => {
+  try {
+    const { upiId } = req.body;
+
+    const mechanic = await updateMechanicUPI(req.userId, upiId);
+
+    res.json({
+      success: true,
+      data: {
+        upiId: mechanic.decryptedUpiId,
+        upiQrCode: mechanic.upiQrCode
+      }
+    });
+  } catch (error) {
+    console.error('Update UPI error:', error);
+    res.status(500).json({ error: 'Failed to update UPI details' });
   }
 };
