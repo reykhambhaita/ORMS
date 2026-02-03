@@ -22,7 +22,9 @@ import {
 import {
   capturePayPalPaymentHandler,
   createPayPalOrderHandler,
-  getPaymentHistoryHandler
+  createUPIPaymentHandler,
+  getPaymentHistoryHandler,
+  verifyUPIPaymentHandler
 } from './controllers/paymentController.js';
 import {
   createReviewHandler,
@@ -216,6 +218,8 @@ app.get('/api/reviews/my-reviews', authenticateToken, getMyReviewsHandler);
 // === PAYMENT ROUTES ===
 app.post('/api/payments/create-order', authenticateToken, createPayPalOrderHandler);
 app.post('/api/payments/capture', authenticateToken, capturePayPalPaymentHandler);
+app.post('/api/payments/create-upi-payment', authenticateToken, createUPIPaymentHandler);
+app.post('/api/payments/verify-upi-payment', authenticateToken, verifyUPIPaymentHandler);
 app.get('/api/payments/history', authenticateToken, getPaymentHistoryHandler);
 
 

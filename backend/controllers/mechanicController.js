@@ -53,6 +53,7 @@ export const createMechanicProfileHandler = async (req, res) => {
         specialties: mechanic.specialties,
         rating: mechanic.rating,
         available: mechanic.available,
+        upiId: mechanic.upiId,
         createdAt: mechanic.createdAt
       }
     });
@@ -145,6 +146,7 @@ export const getMechanicProfileHandler = async (req, res) => {
         specialties: mechanic.specialties,
         rating: mechanic.rating,
         available: mechanic.available,
+        upiId: mechanic.upiId,
         user: {
           username: mechanic.userId.username,
           email: mechanic.userId.email
@@ -251,6 +253,7 @@ export const getNearbyMechanicsHandler = async (req, res) => {
       specialties: mechanic.specialties,
       rating: mechanic.rating,
       available: mechanic.available,
+      upiId: mechanic.upiId,
       username: mechanic.userId?.username || 'Unknown'
     }));
 

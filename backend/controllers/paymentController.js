@@ -156,6 +156,82 @@ export const capturePayPalPaymentHandler = async (req, res) => {
 };
 
 /**
+ * Create UPI payment record
+ * POST /api/payments/create-upi-payment
+ * Body: { amount, mechanicId, description }
+ */
+export const createUPIPaymentHandler = async (req, res) => {
+  try {
+    const { amount, mechanicId, description } = req.body;
+
+    if (!amount || !mechanicId) {
+      return res.status(400).json({ error: 'Amount and mechanic ID are required' });
+    }
+
+    // Save payment record as pending
+    const payment = new Payment({
+      userId: req.userId,
+      mechanicId,
+      amount,
+      status: 'pending',
+      description: description || 'Mechanic service',
+      createdAt: new Date()
+    });
+
+    await payment.save();
+
+    res.json({
+      success: true,
+      data: {
+        paymentId: payment._id
+      }
+    });
+  } catch (error) {
+    console.error('Create UPI payment error:', error);
+    res.status(500).json({ error: 'Failed to initiate payment' });
+  }
+};
+
+/**
+ * Verify UPI payment
+ * POST /api/payments/verify-upi-payment
+ * Body: { paymentId, upiTransactionId, upiResponse, status }
+ */
+export const verifyUPIPaymentHandler = async (req, res) => {
+  try {
+    const { paymentId, upiTransactionId, upiResponse, status } = req.body;
+
+    if (!paymentId) {
+      return res.status(400).json({ error: 'Payment ID is required' });
+    }
+
+    const payment = await Payment.findById(paymentId);
+    if (!payment) {
+      return res.status(404).json({ error: 'Payment record not found' });
+    }
+
+    // Update payment record
+    payment.upiTransactionId = upiTransactionId;
+    payment.upiResponse = upiResponse;
+    payment.status = status === 'SUCCESS' ? 'completed' : 'failed';
+
+    if (payment.status === 'completed') {
+      payment.completedAt = new Date();
+    }
+
+    await payment.save();
+
+    res.json({
+      success: true,
+      status: payment.status
+    });
+  } catch (error) {
+    console.error('Verify UPI payment error:', error);
+    res.status(500).json({ error: 'Failed to verify payment' });
+  }
+};
+
+/**
  * Get payment history
  * GET /api/payments/history
  */
@@ -172,6 +248,8 @@ export const getPaymentHistoryHandler = async (req, res) => {
       status: p.status,
       description: p.description,
       mechanicName: p.mechanicId?.name || 'Unknown',
+      transactionId: p.upiTransactionId || p.paypalCaptureId || p.paypalOrderId,
+      paymentMethod: p.upiTransactionId ? 'UPI' : (p.paypalOrderId ? 'PayPal' : 'Unknown'),
       createdAt: p.createdAt,
       completedAt: p.completedAt
     }));

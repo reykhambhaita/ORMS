@@ -155,6 +155,11 @@ const mechanicSchema = new mongoose.Schema({
     type: Boolean,
     default: true
   },
+  upiId: {
+    type: String,
+    trim: true,
+    default: null
+  },
   createdAt: {
     type: Date,
     default: Date.now
@@ -268,9 +273,15 @@ const paymentSchema = new mongoose.Schema({
   },
   paypalOrderId: {
     type: String,
-    required: true
+    required: false
   },
   paypalCaptureId: {
+    type: String
+  },
+  upiTransactionId: {
+    type: String
+  },
+  upiResponse: {
     type: String
   },
   status: {
@@ -556,7 +567,8 @@ export const createMechanicProfile = async (userId, mechanicData) => {
       ]
     },
     specialties: mechanicData.specialties || [],
-    available: mechanicData.available !== undefined ? mechanicData.available : true
+    available: mechanicData.available !== undefined ? mechanicData.available : true,
+    upiId: mechanicData.upiId || null
   });
 
   return await mechanic.save();
