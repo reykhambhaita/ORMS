@@ -26,7 +26,7 @@ const GetStartedScreen = ({ navigation }) => {
 
         {/* Logo Section */}
         <View style={styles.logoSection}>
-          <Text style={styles.logoText}>ORMS</Text>
+          <Text style={styles.logoText}>Orb</Text>
           <Text style={styles.taglineText}>get mechanical help anywhere</Text>
         </View>
 

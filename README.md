@@ -1,5 +1,5 @@
 ## Overview
-ORMS (On-Road Mechanic Service) is a feature-rich MVP React Native application that bridges the gap between stranded motorists and available mechanics. Built with modern technologies, this project demonstrates full-stack mobile development capabilities including real-time location tracking, offline data synchronization, and payment integration.
+Orb - On-Road Mechanic Service is a feature-rich MVP React Native application that bridges the gap between stranded motorists and available mechanics. Built with modern technologies, this project demonstrates full-stack mobile development capabilities including real-time location tracking, offline data synchronization, and payment integration.
 ## Key Features
 - **Real-time Mechanic Discovery**: Geospatial queries to find nearby mechanics within a customizable radius.
 - **Dual User Roles**: Separate interfaces for customers and mechanics with role-based access control.
@@ -41,8 +41,8 @@ If you want to run the project locally:
 #### Clone and Install
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/ORMS.git
-cd ORMS
+git clone https://github.com/yourusername/Orb.git
+cd Orb
 
 # Install backend dependencies
 cd backend

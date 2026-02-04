@@ -14,7 +14,7 @@ console.log('1. Checking environment variables...');
 if (!process.env.MONGODB_URI) {
   console.error('❌ MONGODB_URI not found in .env file');
   console.log('\n💡 Solution: Add MONGODB_URI to your .env file');
-  console.log('Example: MONGODB_URI=mongodb://localhost:27017/orms');
+  console.log('Example: MONGODB_URI=mongodb://localhost:27017/orb');
   process.exit(1);
 }
 
@@ -111,10 +111,10 @@ const testConnection = async () => {
     }
 
     console.log('For local MongoDB:');
-    console.log('   MONGODB_URI=mongodb://localhost:27017/orms\n');
+    console.log('   MONGODB_URI=mongodb://localhost:27017/orb\n');
 
     console.log('For MongoDB Atlas:');
-    console.log('   MONGODB_URI=mongodb+srv://username:password@cluster.mongodb.net/orms\n');
+    console.log('   MONGODB_URI=mongodb+srv://username:password@cluster.mongodb.net/orb\n');
 
     console.log('Need more help? Check the MongoDB Troubleshooting Guide.');
     console.log('=================================\n');

@@ -264,7 +264,7 @@ const ProfileScreen = ({ navigation }) => {
   };
 
   const openGitHub = () => {
-    Linking.openURL('https://github.com/reykhambhaita/ORMS');
+    Linking.openURL('https://github.com/reykhambhaita/Orb');
   };
 
   if (!fontsLoaded || loading) {
@@ -384,7 +384,7 @@ const ProfileScreen = ({ navigation }) => {
 
           <TouchableOpacity
             style={[dynamicStyles.menuItem, dynamicStyles.menuItemLast]}
-            onPress={() => Alert.alert('About', 'ORMS - On-Road Mechanic Service\nVersion 1.0.0')}
+            onPress={() => Alert.alert('About', 'Orb - On-Road Mechanic Service\nVersion 1.0.0')}
           >
             <Text style={dynamicStyles.menuItemText}>About</Text>
             <Ionicons name="chevron-forward" size={20} color={theme.textSecondary} />
@@ -396,7 +396,7 @@ const ProfileScreen = ({ navigation }) => {
           <Text style={dynamicStyles.repoTitle}>Check out the app repository here.</Text>
           <View style={dynamicStyles.repoInfo}>
             <Ionicons name="logo-github" size={32} color={theme.text} />
-            <Text style={dynamicStyles.repoLink}>reykhambhaita/ORMS</Text>
+            <Text style={dynamicStyles.repoLink}>reykhambhaita/Orb</Text>
           </View>
         </TouchableOpacity>
 
@@ -411,7 +411,7 @@ const ProfileScreen = ({ navigation }) => {
 
         {/* Copyright Footer */}
         <View style={dynamicStyles.copyrightContainer}>
-          <Text style={dynamicStyles.copyrightText}>© 2024 ORMS. All rights reserved.</Text>
+          <Text style={dynamicStyles.copyrightText}>© 2024 Orb. All rights reserved.</Text>
           <Text style={dynamicStyles.copyrightSubtext}>On-Road Mechanic Service</Text>
         </View>
 

@@ -99,7 +99,7 @@ const AuthLoadingScreen = ({ navigation }) => {
   return (
     <View style={styles.container}>
       <View style={styles.logoContainer}>
-        <Text style={styles.logoText}>ORMS</Text>
+        <Text style={styles.logoText}>Orb</Text>
       </View>
 
       {/* Loading Indicator */}

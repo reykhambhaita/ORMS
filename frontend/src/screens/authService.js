@@ -1,8 +1,8 @@
 import * as SecureStore from 'expo-secure-store';
 
 const API_BASE_URL = 'https://backend-three-sepia-16.vercel.app';
-const TOKEN_KEY = 'orms_auth_token';
-const USER_KEY = 'orms_user_data';
+const TOKEN_KEY = 'orb_auth_token';
+const USER_KEY = 'orb_user_data';
 
 class AuthService {
   constructor() {

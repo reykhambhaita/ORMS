@@ -106,7 +106,7 @@ app.use(async (req, res, next) => {
 
 app.get('/', (req, res) => {
   res.json({
-    message: 'ORMS Backend API',
+    message: 'Orb Backend API',
     version: '2.0',
     endpoints: {
       auth: '/api/auth/*',

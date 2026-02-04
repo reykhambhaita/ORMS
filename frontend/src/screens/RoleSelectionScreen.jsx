@@ -65,7 +65,7 @@ const RoleSelectionScreen = ({ navigation, route }) => {
         <View style={styles.formSection}>
           <View style={styles.formContent}>
             <Text style={styles.instructionText}>
-              Select how you would like to use ORMS.
+              Select how you would like to use Orb.
             </Text>
 
             {/* Role Selection Avatars */}

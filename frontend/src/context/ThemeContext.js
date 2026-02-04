@@ -4,7 +4,7 @@ import { useColorScheme } from 'react-native';
 
 const ThemeContext = createContext();
 
-const THEME_STORAGE_KEY = '@orms_theme_mode';
+const THEME_STORAGE_KEY = '@orb_theme_mode';
 
 export const ThemeProvider = ({ children }) => {
   const systemColorScheme = useColorScheme();
