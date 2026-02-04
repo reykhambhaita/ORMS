@@ -5,7 +5,9 @@ import { forwardRef, useEffect, useImperativeHandle, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Dimensions,
   Modal,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -20,6 +22,7 @@ import Animated, {
   withSpring,
   withTiming
 } from 'react-native-reanimated';
+import { useTheme } from '../../context/ThemeContext';
 import authService from '../../screens/authService';
 import dbManager from '../../utils/database';
 
@@ -33,7 +36,10 @@ const CATEGORIES = [
   { value: 'other', label: 'Other' },
 ];
 
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
+
 const LandmarkManager = forwardRef(({ currentLocation, onLandmarksUpdate, onLandmarkClick, searchQuery = '' }, ref) => {
+  const { theme, isDark } = useTheme();
   const [listModalVisible, setListModalVisible] = useState(false);
   const [addModalVisible, setAddModalVisible] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -48,13 +54,25 @@ const LandmarkManager = forwardRef(({ currentLocation, onLandmarksUpdate, onLand
   const [categoryDropdownVisible, setCategoryDropdownVisible] = useState(false);
   const [nearbyLandmarks, setNearbyLandmarks] = useState([]);
   const [dbReady, setDbReady] = useState(false);
+  const listTranslateX = useSharedValue(SCREEN_WIDTH);
+  const addModalTranslateY = useSharedValue(600);
 
   useImperativeHandle(ref, () => ({
-    openLandmarkList: () => setListModalVisible(true),
-    openAddLandmark: () => setAddModalVisible(true)
+    openLandmarkList() {
+      setListModalVisible(true);
+      listTranslateX.value = withSpring(0, {
+        damping: 20,
+        stiffness: 90,
+      });
+    },
+    openAddLandmark() {
+      setAddModalVisible(true);
+      addModalTranslateY.value = withSpring(0, {
+        damping: 15,
+        stiffness: 90,
+      });
+    }
   }));
-
-  const addModalTranslateY = useSharedValue(600);
 
   useEffect(() => {
     if (addModalVisible) {
@@ -352,7 +370,7 @@ const LandmarkManager = forwardRef(({ currentLocation, onLandmarksUpdate, onLand
       setName('');
       setDescription('');
       setCategory('other');
-      setAddModalVisible(false);
+      closeAddModal();
       await loadLandmarks();
     } catch (error) {
       console.error('Add landmark error:', error);
@@ -528,8 +546,10 @@ const LandmarkManager = forwardRef(({ currentLocation, onLandmarksUpdate, onLand
   );
 
   // Close modal function
-  const closeModal = () => {
-    setListModalVisible(false);
+  const closeListModal = () => {
+    listTranslateX.value = withTiming(SCREEN_WIDTH, { duration: 300 }, () => {
+      runOnJS(setListModalVisible)(false);
+    });
   };
 
   const closeAddModal = () => {
@@ -538,15 +558,14 @@ const LandmarkManager = forwardRef(({ currentLocation, onLandmarksUpdate, onLand
     });
   };
 
-
-
-  const animatedStyle = useAnimatedStyle(() => ({
-    // transform: [{ translateY: translateY.value }],
+  const listAnimatedStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: listTranslateX.value }],
   }));
 
   const addModalAnimatedStyle = useAnimatedStyle(() => ({
     transform: [{ translateY: addModalTranslateY.value }],
   }));
+
 
   const getCategoryLabel = (value) => {
     const cat = CATEGORIES.find(c => c.value === value);
@@ -555,96 +574,120 @@ const LandmarkManager = forwardRef(({ currentLocation, onLandmarksUpdate, onLand
 
   return (
     <>
-      {/* Landmarks List - Modal implementation */}
-      {/* Landmarks List - Inline implementation */}
-      {listModalVisible && (
-        <View style={styles.resultsContainer}>
-          <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>Landmarks</Text>
-            <View style={styles.headerRight}>
-              {syncing && (
-                <View style={styles.syncIndicator}>
-                  <ActivityIndicator size="small" color="#001f3f" />
-                  <Text style={styles.syncText}>Syncing...</Text>
-                </View>
-              )}
-              <TouchableOpacity onPress={closeModal}>
-                <Ionicons name="close" size={24} color="#333" />
+      {/* Landmarks List - Sidebar implementation */}
+      <Modal
+        visible={listModalVisible}
+        transparent={true}
+        animationType="none"
+        onRequestClose={closeListModal}
+      >
+        <View style={styles.sidebarOverlay}>
+          <TouchableOpacity
+            style={styles.sidebarBackdrop}
+            activeOpacity={1}
+            onPress={closeListModal}
+          />
+          <Animated.View style={[
+            styles.sidebarContent,
+            listAnimatedStyle,
+            { backgroundColor: theme.background }
+          ]}>
+            <View style={styles.sidebarHeader}>
+              <Text style={[styles.sidebarTitle, { color: theme.text }]}>Landmarks</Text>
+              <TouchableOpacity onPress={closeListModal} style={styles.closeButton}>
+                <Ionicons name="close" size={28} color={theme.text} />
               </TouchableOpacity>
             </View>
-          </View>
 
-          {/* Add Landmark Button */}
-          <TouchableOpacity
-            style={[styles.addButton, (!hasLocation || !dbReady) && styles.buttonDisabled]}
-            onPress={() => {
-              setListModalVisible(false);
-              setAddModalVisible(true);
-            }}
-            disabled={!hasLocation || !dbReady}
-          >
-            <Ionicons name="add-circle-outline" size={18} color="#ffffff" />
-            <Text style={styles.addButtonText}>Add Landmark</Text>
-          </TouchableOpacity>
+            {/* Syncing Indicator */}
+            {syncing && (
+              <View style={styles.syncIndicator}>
+                <ActivityIndicator size="small" color={isDark ? '#fff' : '#001f3f'} />
+                <Text style={[styles.syncText, { color: isDark ? '#fff' : '#001f3f' }]}>Syncing...</Text>
+              </View>
+            )}
 
-          {/* Landmarks List - Using View instead of ScrollView to avoid nested scrolling issues */}
-          {loading && <ActivityIndicator size="small" color="#001f3f" style={styles.loader} />}
+            {/* Add Landmark Button */}
+            <TouchableOpacity
+              style={[
+                styles.sidebarAddButton,
+                (!hasLocation || !dbReady) && styles.buttonDisabled,
+                { backgroundColor: isDark ? '#fff' : '#111111' }
+              ]}
+              onPress={() => {
+                closeListModal();
+                setTimeout(() => setAddModalVisible(true), 300);
+              }}
+              disabled={!hasLocation || !dbReady}
+            >
+              <Ionicons name="add" size={20} color={isDark ? '#111111' : '#fff'} />
+              <Text style={[styles.sidebarAddButtonText, { color: isDark ? '#111111' : '#fff' }]}>Add Landmark</Text>
+            </TouchableOpacity>
 
-          {filteredLandmarks.length > 0 ? (
-            <View style={styles.landmarksListContainer}>
-              {filteredLandmarks.map((landmark, index) => {
-                const landmarkId = landmark.id || landmark._id;
-                const isOffline = !landmark.synced || landmarkId?.startsWith('offline_');
+            {loading && <ActivityIndicator size="large" color={isDark ? '#fff' : '#001f3f'} style={styles.loader} />}
 
-                const handleLandmarkPress = () => {
-                  if (onLandmarkClick) {
-                    onLandmarkClick(landmark);
-                    closeModal();
-                  }
-                };
+            <ScrollView
+              style={styles.landmarksScrollView}
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={styles.landmarksScrollContent}
+            >
+              {filteredLandmarks.length > 0 ? (
+                filteredLandmarks.map((landmark, index) => {
+                  const landmarkId = landmark.id || landmark._id;
+                  const handleLandmarkPress = () => {
+                    if (onLandmarkClick) {
+                      onLandmarkClick(landmark);
+                      closeListModal();
+                    }
+                  };
 
-                return (
-                  <TouchableOpacity
-                    key={landmarkId || index}
-                    style={styles.landmarkItem}
-                    onPress={handleLandmarkPress}
-                    activeOpacity={0.7}
-                  >
-                    <View style={styles.landmarkHeader}>
-                      <View style={styles.landmarkMainInfo}>
-                        <Text style={styles.landmarkName}>
-                          {landmark.name}
-                        </Text>
-                        {landmark.description && (
-                          <Text style={styles.landmarkDescription}>{landmark.description}</Text>
+                  return (
+                    <TouchableOpacity
+                      key={landmarkId || index}
+                      style={[styles.sidebarLandmarkItem, { backgroundColor: theme.card, borderColor: theme.border }]}
+                      onPress={handleLandmarkPress}
+                      activeOpacity={0.7}
+                    >
+                      <View style={styles.landmarkHeader}>
+                        <View style={styles.landmarkMainInfo}>
+                          <Text style={[styles.landmarkName, { color: theme.text }]}>
+                            {landmark.name}
+                          </Text>
+                          {landmark.description && (
+                            <Text style={[styles.landmarkDescription, { color: theme.textSecondary }]}>{landmark.description}</Text>
+                          )}
+                          <View style={styles.categoryPill}>
+                            <Text style={styles.categoryText}>{getCategoryLabel(landmark.category)}</Text>
+                          </View>
+                        </View>
+
+                        {landmarkId && (
+                          <TouchableOpacity
+                            style={styles.deleteButton}
+                            onPress={(e) => {
+                              e.stopPropagation();
+                              handleDeleteLandmark(landmarkId, landmark.name);
+                            }}
+                          >
+                            <Ionicons name="trash-outline" size={20} color="#ff4444" />
+                          </TouchableOpacity>
                         )}
                       </View>
-
-                      {landmarkId && (
-                        <TouchableOpacity
-                          style={styles.deleteButton}
-                          onPress={(e) => {
-                            e.stopPropagation();
-                            handleDeleteLandmark(landmarkId, landmark.name);
-                          }}
-                        >
-                          <Ionicons name="trash-outline" size={18} color="#6b7280" />
-                        </TouchableOpacity>
-                      )}
-                    </View>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-          ) : (
-            <View style={styles.emptyState}>
-              <Text style={styles.emptyText}>
-                {searchQuery ? 'No landmarks match your search' : 'No landmarks nearby'}
-              </Text>
-            </View>
-          )}
+                    </TouchableOpacity>
+                  );
+                })
+              ) : (
+                <View style={styles.emptyState}>
+                  <Ionicons name="map-outline" size={48} color={theme.textSecondary} style={{ opacity: 0.3, marginBottom: 12 }} />
+                  <Text style={[styles.emptyText, { color: theme.textSecondary }]}>
+                    {searchQuery ? 'No landmarks match your search' : 'No landmarks nearby'}
+                  </Text>
+                </View>
+              )}
+            </ScrollView>
+          </Animated.View>
         </View>
-      )}
+      </Modal>
 
       <Modal
         visible={addModalVisible}
@@ -768,6 +811,86 @@ const styles = StyleSheet.create({
     color: '#000000',
     flex: 1,
   },
+  sidebarOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    flexDirection: 'row',
+  },
+  sidebarBackdrop: {
+    flex: 1,
+  },
+  sidebarContent: {
+    width: SCREEN_WIDTH * 0.9,
+    height: '100%',
+    padding: 24,
+    paddingTop: Platform.OS === 'ios' ? 60 : 40,
+    shadowColor: '#000',
+    shadowOffset: { width: -10, height: 0 },
+    shadowOpacity: 0.1,
+    shadowRadius: 15,
+    elevation: 20,
+  },
+  sidebarHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 30,
+  },
+  sidebarTitle: {
+    fontSize: 28,
+    fontWeight: '700',
+    fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif-medium',
+  },
+  closeButton: {
+    padding: 4,
+  },
+  sidebarAddButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    height: 56,
+    borderRadius: 16,
+    marginBottom: 24,
+    gap: 8,
+  },
+  sidebarAddButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  landmarksScrollView: {
+    flex: 1,
+  },
+  landmarksScrollContent: {
+    paddingBottom: 40,
+  },
+  sidebarLandmarkItem: {
+    padding: 20,
+    borderRadius: 20,
+    borderWidth: 1,
+    marginBottom: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.02,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  categoryPill: {
+    backgroundColor: '#f0f2f5',
+    alignSelf: 'flex-start',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8,
+    marginTop: 8,
+  },
+  categoryText: {
+    fontSize: 10,
+    color: '#666',
+    fontWeight: '600',
+    textTransform: 'uppercase',
+  },
+  loader: {
+    marginVertical: 20,
+  },
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.5)',
@@ -803,15 +926,14 @@ const styles = StyleSheet.create({
   syncIndicator: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    backgroundColor: '#E3F2FD',
+    gap: 8,
+    padding: 12,
+    backgroundColor: 'rgba(0,0,0,0.03)',
     borderRadius: 12,
+    marginBottom: 20,
   },
   syncText: {
-    fontSize: 12,
-    color: '#001f3f',
+    fontSize: 13,
     fontWeight: '500',
   },
   modalTitle: {
@@ -860,9 +982,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#ccc',
     opacity: 0.6,
   },
-  landmarksScrollView: {
-    flex: 1,
-  },
   landmarkItem: {
     padding: 12,
     backgroundColor: '#f8f9fa',
@@ -878,24 +997,24 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   landmarkName: {
-    fontSize: 14,
+    fontSize: 16,
     fontWeight: '600',
-    color: '#333',
     marginBottom: 4,
   },
   landmarkDescription: {
-    fontSize: 11,
+    fontSize: 13,
     color: '#6b7280',
     marginBottom: 4,
-    lineHeight: 16,
+    lineHeight: 18,
   },
   deleteButton: {
-    padding: 6,
+    padding: 8,
     marginLeft: 8,
   },
   emptyState: {
-    padding: 32,
     alignItems: 'center',
+    justifyContent: 'center',
+    paddingTop: 60,
   },
   emptyText: {
     fontSize: 14,
@@ -924,6 +1043,7 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     padding: 24,
+    paddingBottom: 40,
     width: '100%',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: -10 },
@@ -939,17 +1059,17 @@ const styles = StyleSheet.create({
   input: {
     backgroundColor: '#f5f5f5',
     padding: 12,
-    borderRadius: 8,
+    borderRadius: 12,
     fontSize: 16,
     borderWidth: 1,
-    borderColor: '#ddd',
+    borderColor: '#eee',
   },
   nameInput: {
     flex: 1,
   },
   descriptionInput: {
-    marginBottom: 15,
-    minHeight: 80,
+    marginBottom: 20,
+    minHeight: 100,
     textAlignVertical: 'top',
   },
   dropdownContainer: {
@@ -959,9 +1079,9 @@ const styles = StyleSheet.create({
   dropdownButton: {
     backgroundColor: '#f5f5f5',
     padding: 12,
-    borderRadius: 8,
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#ddd',
+    borderColor: '#eee',
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
@@ -973,13 +1093,13 @@ const styles = StyleSheet.create({
   },
   dropdownList: {
     position: 'absolute',
-    top: 50,
+    top: 54,
     left: 0,
     right: 0,
     backgroundColor: '#fff',
-    borderRadius: 8,
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#ddd',
+    borderColor: '#eee',
     maxHeight: 200,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
@@ -997,7 +1117,7 @@ const styles = StyleSheet.create({
     borderBottomColor: '#f0f0f0',
   },
   dropdownItemActive: {
-    backgroundColor: '#E3F2FD',
+    backgroundColor: '#f0f7ff',
   },
   dropdownItemText: {
     fontSize: 14,
@@ -1009,13 +1129,14 @@ const styles = StyleSheet.create({
   },
   modalButtons: {
     flexDirection: 'row',
-    gap: 10,
+    gap: 12,
   },
   modalButton: {
     flex: 1,
-    padding: 14,
-    borderRadius: 8,
+    height: 52,
+    borderRadius: 16,
     alignItems: 'center',
+    justifyContent: 'center',
   },
   cancelButton: {
     backgroundColor: '#f5f5f5',

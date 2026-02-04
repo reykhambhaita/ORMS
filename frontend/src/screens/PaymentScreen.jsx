@@ -1,5 +1,6 @@
 // src/screens/PaymentScreen.jsx
 import { RussoOne_400Regular, useFonts } from '@expo-google-fonts/russo-one';
+import { Ionicons } from '@expo/vector-icons';
 import * as Linking from 'expo-linking';
 import { useEffect, useState } from 'react';
 import {
@@ -13,10 +14,11 @@ import {
   View
 } from 'react-native';
 import QRScannerModal from '../components/payment/QRScannerModal';
+import { useTheme } from '../context/ThemeContext';
 import usePaymentPolling from '../hooks/usePaymentPolling';
 import authService from './authService';
-
 const PaymentScreen = ({ route, navigation }) => {
+  const { theme, isDark } = useTheme();
   const [fontsLoaded] = useFonts({
     RussoOne_400Regular,
   });
@@ -320,7 +322,7 @@ const PaymentScreen = ({ route, navigation }) => {
   };
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: isDark ? '#0a0a0a' : '#fafafa' }]}>
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         keyboardShouldPersistTaps="handled"
@@ -328,12 +330,12 @@ const PaymentScreen = ({ route, navigation }) => {
         showsVerticalScrollIndicator={false}
       >
         {/* Form Section */}
-        <View style={styles.formSection}>
+        <View style={[styles.formSection, { backgroundColor: isDark ? '#111111' : '#ffffff' }]}>
           <View style={styles.formContent}>
             {/* Mechanic Info */}
-            <View style={styles.mechanicCard}>
-              <Text style={styles.mechanicLabel}>PAYING TO</Text>
-              <Text style={styles.mechanicName}>{mechanicName}</Text>
+            <View style={[styles.mechanicCard, { backgroundColor: isDark ? '#1a1a1a' : '#fafafa', borderColor: isDark ? '#333' : '#f0f0f0' }]}>
+              <Text style={[styles.mechanicLabel, { color: isDark ? '#a0a0a0' : '#555' }]}>PAYING TO</Text>
+              <Text style={[styles.mechanicName, { color: isDark ? '#FFFFFF' : '#111111' }]}>{mechanicName}</Text>
               {mechanicPhone && (
                 <Text style={styles.mechanicPhone}>📞 {mechanicPhone}</Text>
               )}
@@ -346,14 +348,14 @@ const PaymentScreen = ({ route, navigation }) => {
 
               {upiQrCode && paymentState === 'idle' && (
                 <TouchableOpacity
-                  style={styles.qrBadge}
+                  style={[styles.qrBadge, { backgroundColor: isDark ? '#222' : '#fff', borderColor: isDark ? '#444' : '#e5e7eb' }]}
                   onPress={() => setShowExpandedQR(true)}
                   activeOpacity={0.7}
                 >
                   <Image source={{ uri: upiQrCode }} style={styles.miniQr} />
                   <View>
-                    <Text style={styles.qrHint}>Scan to Pay</Text>
-                    <Text style={styles.tapToExpand}>Tap to expand</Text>
+                    <Text style={[styles.qrHint, { color: isDark ? '#FFFFFF' : '#111111' }]}>Scan to Pay</Text>
+                    <Text style={[styles.tapToExpand, { color: isDark ? '#a0a0a0' : '#888' }]}>Tap to expand</Text>
                   </View>
                 </TouchableOpacity>
               )}
@@ -361,13 +363,13 @@ const PaymentScreen = ({ route, navigation }) => {
 
             {/* Amount Input */}
             <View style={styles.inputContainer}>
-              <Text style={styles.inputLabel}>AMOUNT (INR)</Text>
-              <View style={styles.amountInputWrapper}>
-                <Text style={styles.currencySymbol}>₹</Text>
+              <Text style={[styles.inputLabel, { color: isDark ? '#a0a0a0' : '#555' }]}>AMOUNT (INR)</Text>
+              <View style={[styles.amountInputWrapper, { borderBottomColor: isDark ? '#444' : '#ccc' }]}>
+                <Text style={[styles.currencySymbol, { color: isDark ? '#FFFFFF' : '#111111' }]}>₹</Text>
                 <TextInput
-                  style={styles.amountInput}
+                  style={[styles.amountInput, { color: isDark ? '#FFFFFF' : '#333' }]}
                   placeholder="0.00"
-                  placeholderTextColor="#999"
+                  placeholderTextColor={isDark ? '#666' : '#999'}
                   value={amount}
                   onChangeText={setAmount}
                   keyboardType="decimal-pad"
@@ -378,11 +380,11 @@ const PaymentScreen = ({ route, navigation }) => {
 
             {/* Description Input */}
             <View style={styles.inputContainer}>
-              <Text style={styles.inputLabel}>DESCRIPTION (OPTIONAL)</Text>
+              <Text style={[styles.inputLabel, { color: isDark ? '#a0a0a0' : '#555' }]}>DESCRIPTION (OPTIONAL)</Text>
               <TextInput
-                style={styles.descriptionInput}
+                style={[styles.descriptionInput, { color: isDark ? '#FFFFFF' : '#333', borderBottomColor: isDark ? '#444' : '#ccc' }]}
                 placeholder="What is this payment for?"
-                placeholderTextColor="#999"
+                placeholderTextColor={isDark ? '#666' : '#999'}
                 value={description}
                 onChangeText={setDescription}
                 multiline
@@ -394,23 +396,23 @@ const PaymentScreen = ({ route, navigation }) => {
 
             {/* Payment Status Info */}
             {paymentState !== 'idle' && (
-              <View style={styles.statusBox}>
-                <Text style={styles.statusText}>{getStatusMessage()}</Text>
+              <View style={[styles.statusBox, { backgroundColor: isDark ? '#001a2c' : '#f0f9ff', borderColor: isDark ? '#0c4a6e' : '#bae6fd' }]}>
+                <Text style={[styles.statusText, { color: isDark ? '#bae6fd' : '#0c4a6e' }]}>{getStatusMessage()}</Text>
                 {isPolling && timeRemaining !== null && (
-                  <Text style={styles.timerText}>
+                  <Text style={[styles.timerText, { color: isDark ? '#7dd3fc' : '#075985' }]}>
                     Time remaining: {formatTime(timeRemaining)}
                   </Text>
                 )}
                 {isPolling && (
-                  <ActivityIndicator color="#111111" style={{ marginTop: 12 }} />
+                  <ActivityIndicator color={isDark ? '#FFFFFF' : '#111111'} style={{ marginTop: 12 }} />
                 )}
               </View>
             )}
 
             {/* Payment Info */}
             {paymentState === 'idle' && (
-              <View style={styles.infoBox}>
-                <Text style={styles.infoText}>
+              <View style={[styles.infoBox, { backgroundColor: isDark ? '#1a1a1a' : '#f9fafb', borderColor: isDark ? '#333' : '#f0f0f0' }]}>
+                <Text style={[styles.infoText, { color: isDark ? '#a0a0a0' : '#666666' }]}>
                   📱 This payment will be processed securely via UPI.
                   {'\n\n'}
                   {upiId
@@ -457,12 +459,12 @@ const PaymentScreen = ({ route, navigation }) => {
             {/* Scan QR Button */}
             {paymentState === 'idle' && (
               <TouchableOpacity
-                style={styles.scanQrButton}
+                style={[styles.scanQrButton, { backgroundColor: isDark ? '#1a1a1a' : '#fff', borderColor: isDark ? '#333' : '#e5e7eb' }]}
                 onPress={() => setShowScanner(true)}
                 activeOpacity={0.7}
               >
-                <Ionicons name="qr-code-outline" size={20} color="#111" style={{ marginRight: 8 }} />
-                <Text style={styles.scanQrButtonText}>Scan Mechanic's QR</Text>
+                <Ionicons name="qr-code-outline" size={20} color={isDark ? '#FFFFFF' : '#111'} style={{ marginRight: 8 }} />
+                <Text style={[styles.scanQrButtonText, { color: isDark ? '#FFFFFF' : '#111' }]}>Scan Mechanic's QR</Text>
               </TouchableOpacity>
             )}
           </View>
@@ -481,17 +483,17 @@ const PaymentScreen = ({ route, navigation }) => {
           activeOpacity={1}
           onPress={() => setShowExpandedQR(false)}
         >
-          <View style={styles.expandedQrContent}>
-            <Text style={styles.expandedQrTitle}>Payment QR Code</Text>
-            <View style={styles.largeQrContainer}>
+          <View style={[styles.expandedQrContent, { backgroundColor: isDark ? '#111' : '#fff' }]}>
+            <Text style={[styles.expandedQrTitle, { color: isDark ? '#FFFFFF' : '#111' }]}>Payment QR Code</Text>
+            <View style={[styles.largeQrContainer, { backgroundColor: '#fff' }]}>
               <Image source={{ uri: upiQrCode }} style={styles.largeQr} />
             </View>
-            <Text style={styles.expandedQrHint}>Show this to the user to receive payment</Text>
+            <Text style={[styles.expandedQrHint, { color: isDark ? '#a0a0a0' : '#888' }]}>Show this to the user to receive payment</Text>
             <TouchableOpacity
-              style={styles.closeExpandedButton}
+              style={[styles.closeExpandedButton, { backgroundColor: isDark ? '#f2f2f2' : '#111' }]}
               onPress={() => setShowExpandedQR(false)}
             >
-              <Text style={styles.closeExpandedText}>Close</Text>
+              <Text style={[styles.closeExpandedText, { color: isDark ? '#000' : '#fff' }]}>Close</Text>
             </TouchableOpacity>
           </View>
         </TouchableOpacity>

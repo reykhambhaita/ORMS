@@ -36,7 +36,6 @@ const LoginScreen = ({ navigation }) => {
     setLoading(false);
 
     if (result.success) {
-      Alert.alert('Success', 'Logged in successfully!');
       navigation.replace('Main');
     } else {
       Alert.alert('Login Failed', result.error);
@@ -104,14 +103,15 @@ const LoginScreen = ({ navigation }) => {
                 <Text style={styles.loginButtonText}>login</Text>
               )}
             </TouchableOpacity>
+
+            {/* Forgot Password Link */}
+            <View style={styles.forgotPasswordContainer}>
+              <TouchableOpacity onPress={() => navigation.navigate('ForgotPassword')}>
+                <Text style={styles.forgotPasswordText}>FORGOT PASSWORD?</Text>
+              </TouchableOpacity>
+            </View>
           </View>
 
-          {/* Forgot Password Link */}
-          <View style={styles.forgotPasswordContainer}>
-            <TouchableOpacity>
-              <Text style={styles.forgotPasswordText}>FORGOT PASSWORD?</Text>
-            </TouchableOpacity>
-          </View>
 
           {/* Sign Up Link */}
           <View style={styles.signupContainer}>

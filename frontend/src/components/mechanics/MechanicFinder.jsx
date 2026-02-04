@@ -20,10 +20,12 @@ import Animated, {
   withSpring,
   withTiming
 } from 'react-native-reanimated';
+import { useTheme } from '../../context/ThemeContext';
 import authService from '../../screens/authService.js';
 import dbManager from '../../utils/database';
 
 const MechanicFinder = forwardRef(({ searchLocation, searchLocationName, onResetToGPS, onMechanicsUpdate, navigation, targetMechanicId }, ref) => {
+  const { theme, isDark } = useTheme();
   const [loading, setLoading] = useState(false);
   const [mechanics, setMechanics] = useState([]);
   const [selectedMechanic, setSelectedMechanic] = useState(null);
@@ -495,29 +497,35 @@ const MechanicFinder = forwardRef(({ searchLocation, searchLocationName, onReset
             {mechanics.map((mechanic, index) => (
               <TouchableOpacity
                 key={mechanic.id || mechanic._id || index}
-                style={styles.mechanicCard}
+                style={[
+                  styles.mechanicCard,
+                  {
+                    backgroundColor: isDark ? '#000000' : '#ffffff',
+                    borderColor: isDark ? '#222222' : '#f0f0f0'
+                  }
+                ]}
                 onPress={() => openDetailModal(mechanic)}
                 activeOpacity={0.7}
               >
                 <View style={styles.cardHeader}>
                   <View style={styles.cardLeft}>
-                    <Text style={styles.mechanicName}>{mechanic.name}</Text>
+                    <Text style={[styles.mechanicName, { color: isDark ? '#FFFFFF' : '#111111' }]}>{mechanic.name}</Text>
                     <View style={styles.starRating}>
                       {[1, 2, 3, 4, 5].map((star) => (
                         <Ionicons
                           key={star}
                           name={star <= Math.round(mechanic.rating || 0) ? 'star' : 'star-outline'}
                           size={14}
-                          color="#000000"
+                          color={isDark ? '#FFFFFF' : '#000000'}
                         />
                       ))}
-                      <Text style={styles.ratingValue}>
+                      <Text style={[styles.ratingValue, { color: isDark ? '#A0A0A0' : '#888888' }]}>
                         {(mechanic.rating || 0).toFixed(1)}
                       </Text>
                     </View>
                   </View>
-                  <View style={styles.distanceBadge}>
-                    <Text style={styles.distanceText}>
+                  <View style={[styles.distanceBadge, { backgroundColor: isDark ? '#222222' : '#f3f4f6' }]}>
+                    <Text style={[styles.distanceText, { color: isDark ? '#FFFFFF' : '#111111' }]}>
                       {mechanic.distanceFromUser != null
                         ? mechanic.distanceFromUser < 1
                           ? `${(mechanic.distanceFromUser * 1000).toFixed(0)}m`
@@ -554,22 +562,26 @@ const MechanicFinder = forwardRef(({ searchLocation, searchLocationName, onReset
               activeOpacity={1}
               onPress={closeDetailModal}
             />
-            <Animated.View style={[styles.modalContent, animatedContentStyle]}>
-              <View style={styles.modalHandle} />
+            <Animated.View style={[
+              styles.modalContent,
+              animatedContentStyle,
+              { backgroundColor: isDark ? '#000000' : '#FFFFFF' }
+            ]}>
+              <View style={[styles.modalHandle, { backgroundColor: isDark ? '#333333' : '#E5E7EB' }]} />
 
               <View style={styles.modalHeader}>
                 <View>
-                  <Text style={styles.modalTitle}>{selectedMechanic.name}</Text>
+                  <Text style={[styles.modalTitle, { color: isDark ? '#FFFFFF' : '#111111' }]}>{selectedMechanic.name}</Text>
                   <View style={styles.modalRating}>
                     {[1, 2, 3, 4, 5].map((star) => (
                       <Ionicons
                         key={star}
                         name={star <= Math.round(selectedMechanic.rating || 0) ? 'star' : 'star-outline'}
                         size={16}
-                        color="#000000ff"
+                        color={isDark ? '#FFFFFF' : '#000000ff'}
                       />
                     ))}
-                    <Text style={styles.modalRatingText}>
+                    <Text style={[styles.modalRatingText, { color: isDark ? '#A0A0A0' : '#888888' }]}>
                       {(selectedMechanic.rating || 0).toFixed(1)}
                     </Text>
                   </View>
@@ -578,13 +590,13 @@ const MechanicFinder = forwardRef(({ searchLocation, searchLocationName, onReset
                   onPress={closeDetailModal}
                   style={styles.closeButton}
                 >
-                  <Ionicons name="close" size={24} color="#6B7280" />
+                  <Ionicons name="close" size={24} color={isDark ? '#FFFFFF' : '#6B7280'} />
                 </TouchableOpacity>
               </View>
 
               <View style={styles.modalDistance}>
-                <Ionicons name="location-outline" size={18} color="#6B7280" />
-                <Text style={styles.modalDistanceText}>
+                <Ionicons name="location-outline" size={18} color={isDark ? '#A0A0A0' : '#6B7280'} />
+                <Text style={[styles.modalDistanceText, { color: isDark ? '#A0A0A0' : '#6B7280' }]}>
                   {selectedMechanic.distanceFromUser != null
                     ? selectedMechanic.distanceFromUser < 1
                       ? `${(selectedMechanic.distanceFromUser * 1000).toFixed(0)} meters away`

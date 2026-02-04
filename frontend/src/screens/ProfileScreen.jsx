@@ -376,7 +376,7 @@ const ProfileScreen = ({ navigation }) => {
 
           <TouchableOpacity
             style={dynamicStyles.menuItem}
-            onPress={() => Alert.alert('App Permissions', 'Manage app permissions here.')}
+            onPress={() => navigation.navigate('Permissions')}
           >
             <Text style={dynamicStyles.menuItemText}>App Permissions</Text>
             <Ionicons name="chevron-forward" size={20} color={theme.textSecondary} />
@@ -933,7 +933,7 @@ const styles = (theme) => StyleSheet.create({
     opacity: 0.8,
   },
   bottomPadding: {
-    height: 120,
+    height: 50,
   },
   modalOverlay: {
     flex: 1,

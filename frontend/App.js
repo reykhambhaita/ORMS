@@ -7,11 +7,15 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { TamaguiProvider } from 'tamagui';
 import { ThemeProvider, useTheme } from './src/context/ThemeContext';
 import AuthLoadingScreen from './src/screens/AuthLoading';
+import ForgotPasswordScreen from './src/screens/ForgotPasswordScreen';
 import GetStartedScreen from './src/screens/GetStartedScreen';
 import LoginScreen from './src/screens/LoginScreen';
 import MainScreen from './src/screens/MainScreen';
+import MechanicDetailScreen from './src/screens/MechanicDetailScreen';
 import OTPScreen from './src/screens/OTPScreen';
 import PaymentScreen from './src/screens/PaymentScreen';
+import PermissionsScreen from './src/screens/PermissionsScreen';
+import ResetPasswordScreen from './src/screens/ResetPasswordScreen';
 import ReviewMechanicScreen from './src/screens/ReviewMechanicScreen';
 import RoleSelectionScreen from './src/screens/RoleSelectionScreen';
 import SignupScreen from './src/screens/SignupScreen';
@@ -33,6 +37,7 @@ function NavigationStack() {
           screenOptions={{
             headerShown: false,
             contentStyle: { backgroundColor: theme.background },
+            animation: 'fade',
           }}
         >
           {/* Auth Loading Screen - checks if user is logged in */}
@@ -52,25 +57,64 @@ function NavigationStack() {
           <Stack.Screen
             name="Login"
             component={LoginScreen}
-            options={{ headerShown: false }}
+            options={{
+              headerShown: false,
+              animation: 'slide_from_right'
+            }}
           />
 
           <Stack.Screen
             name="Signup"
             component={SignupScreen}
-            options={{ headerShown: false }}
+            options={{
+              headerShown: false,
+              animation: 'slide_from_right'
+            }}
+          />
+
+          <Stack.Screen
+            name="ForgotPassword"
+            component={ForgotPasswordScreen}
+            options={{
+              headerShown: false,
+              animation: 'slide_from_right'
+            }}
+          />
+
+          <Stack.Screen
+            name="ResetPassword"
+            component={ResetPasswordScreen}
+            options={{
+              headerShown: false,
+              animation: 'slide_from_right'
+            }}
           />
 
           <Stack.Screen
             name="OTP"
             component={OTPScreen}
-            options={{ headerShown: false }}
+            options={{
+              headerShown: false,
+              animation: 'slide_from_right'
+            }}
           />
 
           <Stack.Screen
             name="RoleSelection"
             component={RoleSelectionScreen}
-            options={{ headerShown: false }}
+            options={{
+              headerShown: false,
+              animation: 'slide_from_right'
+            }}
+          />
+
+          <Stack.Screen
+            name="MechanicDetail"
+            component={MechanicDetailScreen}
+            options={{
+              headerShown: false,
+              animation: 'slide_from_right'
+            }}
           />
 
           {/* Main App Screens */}
@@ -122,6 +166,13 @@ function NavigationStack() {
               headerTitleStyle: {
                 fontWeight: '600',
               },
+            }}
+          />
+          <Stack.Screen
+            name="Permissions"
+            component={PermissionsScreen}
+            options={{
+              headerShown: true,
             }}
           />
         </Stack.Navigator>

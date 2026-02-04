@@ -1,6 +1,7 @@
 // src/screens/MainScreen.jsx
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
+import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import MultiModalLocationTracker from '../components/location/MultiModalLocationTracker';
 import CustomBottomNavigation from '../components/navigation/CustomBottomNavigation';
 import { useTheme } from '../context/ThemeContext';
@@ -100,8 +101,18 @@ const MainScreen = ({ navigation, route }) => {
     }
   };
 
+  const opacity = useSharedValue(0);
+
+  useEffect(() => {
+    opacity.value = withTiming(1, { duration: 1000 });
+  }, []);
+
+  const animatedStyle = useAnimatedStyle(() => ({
+    opacity: opacity.value,
+  }));
+
   return (
-    <View style={[styles.container, { backgroundColor: theme.background }]}>
+    <Animated.View style={[styles.container, { backgroundColor: theme.background }, animatedStyle]}>
       <MultiModalLocationTracker
         ref={trackerRef}
         onLocationUpdate={handleLocationUpdate}
@@ -117,7 +128,7 @@ const MainScreen = ({ navigation, route }) => {
         activeTab={activeTab}
         onTabPress={setActiveTab}
       />
-    </View>
+    </Animated.View>
   );
 };
 

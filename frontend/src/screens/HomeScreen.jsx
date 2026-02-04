@@ -96,7 +96,7 @@ const styles = StyleSheet.create({
     maxWidth: 280,
   },
   headerGreeting: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: '700',
     marginBottom: 1,
   },

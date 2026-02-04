@@ -18,7 +18,7 @@ const OTPScreen = ({ navigation, route }) => {
     RussoOne_400Regular,
   });
 
-  const { email } = route.params;
+  const { email, isForgotPassword } = route.params;
   const [otp, setOtp] = useState('');
   const [loading, setLoading] = useState(false);
   const [resending, setResending] = useState(false);
@@ -47,17 +47,23 @@ const OTPScreen = ({ navigation, route }) => {
     }
 
     setLoading(true);
-    const result = await authService.verifyOTP(email, otp);
+    let result;
+    if (isForgotPassword) {
+      result = await authService.verifyForgotPasswordOTP(email, otp);
+    } else {
+      result = await authService.verifyOTP(email, otp);
+    }
     setLoading(false);
 
     if (result.success) {
-      Alert.alert('Success', 'Email verified successfully!');
-      // Navigate to role selection
-      navigation.replace('RoleSelection', {
-        email: email,
-        // Passing these just in case, though verifyOTP stores user data in authService
-        username: result.user.username,
-      });
+      if (isForgotPassword) {
+        navigation.navigate('ResetPassword', { email, otp });
+      } else {
+        navigation.replace('RoleSelection', {
+          email: email,
+          username: result.user.username,
+        });
+      }
     } else {
       Alert.alert('Verification Failed', result.error);
     }
@@ -76,6 +82,19 @@ const OTPScreen = ({ navigation, route }) => {
     } else {
       Alert.alert('Error', result.error);
     }
+  };
+
+  const renderOtpBlocks = () => {
+    const blocksSource = otp.padEnd(6, ' ').split('');
+    return (
+      <View style={styles.otpContainer}>
+        {blocksSource.map((char, index) => (
+          <View key={index} style={[styles.otpBlock, char !== ' ' && styles.otpBlockFilled]}>
+            <Text style={styles.otpDigit}>{char}</Text>
+          </View>
+        ))}
+      </View>
+    );
   };
 
   return (
@@ -99,19 +118,18 @@ const OTPScreen = ({ navigation, route }) => {
             </Text>
             <Text style={styles.emailText}>{email}</Text>
 
-            <View style={styles.inputContainer}>
-              <Text style={styles.inputLabel}>OTP CODE</Text>
+            <TouchableOpacity activeOpacity={1} style={styles.inputWrapper}>
+              {renderOtpBlocks()}
               <TextInput
-                placeholder="000000"
-                placeholderTextColor="#999"
                 value={otp}
-                onChangeText={setOtp}
+                onChangeText={(val) => setOtp(val.replace(/[^0-9]/g, ''))}
                 keyboardType="number-pad"
                 maxLength={6}
-                style={styles.inputField}
+                style={styles.hiddenInput}
+                autoFocus={true}
                 editable={!loading}
               />
-            </View>
+            </TouchableOpacity>
 
             <TouchableOpacity
               onPress={handleVerify}
@@ -122,11 +140,12 @@ const OTPScreen = ({ navigation, route }) => {
               {loading ? (
                 <ActivityIndicator color="#ffffff" />
               ) : (
-                <Text style={styles.verifyButtonText}>verify</Text>
+                <Text style={styles.verifyButtonText}>continue</Text>
               )}
             </TouchableOpacity>
 
             <View style={styles.resendContainer}>
+
               <Text style={styles.resendText}>
                 Didn't receive the code?{' '}
               </Text>
@@ -193,46 +212,65 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: 40,
   },
-  inputContainer: {
-    marginBottom: 32,
+  inputWrapper: {
+    marginBottom: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
+    height: 70,
   },
-  inputLabel: {
-    fontSize: 12,
-    fontWeight: '500',
-    color: '#555',
-    textTransform: 'uppercase',
-    marginBottom: 16,
-    letterSpacing: 0.5,
-    textAlign: 'center',
-  },
-  inputField: {
+  otpContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     width: '100%',
-    paddingVertical: 12,
-    fontSize: 32,
+    paddingHorizontal: 0,
+  },
+  otpBlock: {
+    width: 48,
+    height: 56,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: '#e5e7eb',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#f9fafb',
+  },
+  otpBlockFilled: {
+    borderColor: '#111111',
+    backgroundColor: '#ffffff',
+  },
+  otpDigit: {
+    fontSize: 24,
+    fontWeight: '700',
     color: '#111111',
-    textAlign: 'center',
-    letterSpacing: 8,
-    borderBottomWidth: 2,
-    borderBottomColor: '#111111',
+  },
+  hiddenInput: {
+    position: 'absolute',
+    opacity: 0,
+    width: '100%',
+    height: '100%',
   },
   verifyButton: {
     backgroundColor: '#111111',
-    height: 56,
+    height: 60,
     borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 24,
+    marginTop: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 10,
+    elevation: 5,
   },
   verifyButtonText: {
     color: '#ffffff',
     fontSize: 20,
     fontWeight: '600',
-    textTransform: 'lowercase',
   },
   resendContainer: {
     flexDirection: 'row',
     justifyContent: 'center',
-    marginTop: 32,
+    marginTop: 40,
   },
   resendText: {
     fontSize: 14,
@@ -249,3 +287,4 @@ const styles = StyleSheet.create({
 });
 
 export default OTPScreen;
+

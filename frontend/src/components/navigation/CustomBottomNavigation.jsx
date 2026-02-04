@@ -1,6 +1,6 @@
-// src/components/navigation/CustomBottomNavigation.jsx
 import { Ionicons } from '@expo/vector-icons';
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { useEffect, useState } from 'react';
+import { Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import Animated, {
   useAnimatedStyle,
   useDerivedValue,
@@ -9,6 +9,8 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../../context/ThemeContext';
+import authService from '../../screens/authService';
+
 
 const SPRING_CONFIG = {
   damping: 18,
@@ -16,9 +18,9 @@ const SPRING_CONFIG = {
   mass: 0.8,      // Lighter feel
 };
 
-const TabPill = ({ tab, isActive, isLeftOfInactive, isRightOfInactive, onTabPress }) => {
+const TabPill = ({ tab, isActive, isLeftOfInactive, isRightOfInactive, onTabPress, isDark, userAvatar }) => {
   const animatedWidth = useDerivedValue(() => {
-    return withSpring(isActive ? 160 : 60, SPRING_CONFIG);
+    return withSpring(isActive ? 180 : 70, SPRING_CONFIG);
   });
 
   const animatedStyle = useAnimatedStyle(() => {
@@ -48,27 +50,49 @@ const TabPill = ({ tab, isActive, isLeftOfInactive, isRightOfInactive, onTabPres
       onPress={onTabPress}
       activeOpacity={0.9}
     >
-      <Animated.View style={[styles.pill, animatedStyle]}>
+      <Animated.View style={[styles.pill, animatedStyle, { backgroundColor: isDark ? '#FFFFFF' : '#111111' }]}>
         <Animated.View style={iconStyle}>
-          <Ionicons
-            name={isActive ? tab.icon : `${tab.icon}-outline`}
-            size={22}
-            color="#FFFFFF"
-          />
+          {tab.id === 'Profile' && userAvatar ? (
+            <Image
+              source={{ uri: userAvatar }}
+              style={[
+                styles.avatarIcon,
+                { borderColor: isDark ? '#000000' : '#FFFFFF' }
+              ]}
+            />
+          ) : (
+            <Ionicons
+              name={isActive ? tab.icon : `${tab.icon}-outline`}
+              size={22}
+              color={isDark ? '#000000' : '#FFFFFF'}
+            />
+          )}
         </Animated.View>
         {isActive && (
           <Animated.View style={[styles.labelWrapper, labelStyle]}>
-            <Text style={styles.tabLabel} numberOfLines={1}>{tab.label}</Text>
+            <Text style={[styles.tabLabel, { color: isDark ? '#000000' : '#FFFFFF' }]} numberOfLines={1}>{tab.label}</Text>
           </Animated.View>
         )}
       </Animated.View>
     </TouchableOpacity>
+
   );
 };
 
 const CustomBottomNavigation = ({ activeTab, onTabPress }) => {
-  const { theme } = useTheme();
+  const { theme, isDark } = useTheme();
   const insets = useSafeAreaInsets();
+  const [userAvatar, setUserAvatar] = useState(null);
+
+  useEffect(() => {
+    const fetchUser = async () => {
+      const user = await authService.getUser();
+      if (user && user.avatar) {
+        setUserAvatar(user.avatar);
+      }
+    };
+    fetchUser();
+  }, [activeTab]); // Refresh on tab change as they might have updated profile
 
   const tabs = [
     { id: 'Home', icon: 'home', label: 'Home' },
@@ -79,7 +103,11 @@ const CustomBottomNavigation = ({ activeTab, onTabPress }) => {
   return (
     <View style={[
       styles.container,
-      { paddingBottom: Math.max(insets.bottom, 12) }
+      {
+        paddingBottom: Math.max(insets.bottom, 12),
+        backgroundColor: isDark ? '#000000' : '#FFFFFF',
+        borderTopColor: isDark ? '#222222' : '#f5f5f5'
+      }
     ]}>
       <View style={styles.navBar}>
         {tabs.map((tab, index) => {
@@ -98,6 +126,8 @@ const CustomBottomNavigation = ({ activeTab, onTabPress }) => {
               isLeftOfInactive={isLeftOfInactive}
               isRightOfInactive={isRightOfInactive}
               onTabPress={() => onTabPress(tab.id)}
+              isDark={isDark}
+              userAvatar={userAvatar}
             />
           );
         })}
@@ -105,6 +135,7 @@ const CustomBottomNavigation = ({ activeTab, onTabPress }) => {
     </View>
   );
 };
+
 
 const styles = StyleSheet.create({
   container: {
@@ -115,7 +146,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     paddingBottom: 12,
     paddingTop: 8,
-    paddingHorizontal: 16,
+    paddingHorizontal: 8,
     borderTopWidth: 1,
     borderTopColor: '#f5f5f5',
     zIndex: 1000,
@@ -149,6 +180,13 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     letterSpacing: 0.2,
   },
+  avatarIcon: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
 });
+
 
 export default CustomBottomNavigation;

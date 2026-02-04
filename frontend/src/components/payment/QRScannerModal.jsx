@@ -1,5 +1,5 @@
 // src/components/payment/QRScannerModal.jsx
-import { Ionicons } from '@expo-vector-icons';
+import { Ionicons } from '@expo/vector-icons';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { useEffect, useState } from 'react';
 import {

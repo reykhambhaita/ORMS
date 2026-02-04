@@ -22,11 +22,12 @@ const GetStartedScreen = ({ navigation }) => {
 
       {/* Content Container */}
       <View style={styles.contentContainer}>
+        <View style={{ flex: 1 }} />
+
         {/* Logo Section */}
         <View style={styles.logoSection}>
           <Text style={styles.logoText}>ORMS</Text>
-          <Text style={styles.subtitleText}>on road mechanic service</Text>
-          <Text style={styles.taglineText}>Get Mechanical Help Anywhere.</Text>
+          <Text style={styles.taglineText}>get mechanical help anywhere</Text>
         </View>
 
         {/* Button Section */}
@@ -40,6 +41,7 @@ const GetStartedScreen = ({ navigation }) => {
           </TouchableOpacity>
         </View>
       </View>
+
     </View>
   );
 };
@@ -55,27 +57,22 @@ const styles = StyleSheet.create({
     paddingHorizontal: 32,
   },
   logoSection: {
-    flex: 1,
-    justifyContent: 'center',
+    marginBottom: 24,
   },
   logoText: {
     fontSize: 56,
     fontFamily: 'RussoOne_400Regular',
     color: '#ffffff',
     letterSpacing: 2,
-    marginBottom: 4,
-  },
-  subtitleText: {
-    fontSize: 16,
-    color: '#ffffff',
-    marginBottom: 16,
-    fontWeight: '400',
+    marginBottom: 0,
   },
   taglineText: {
-    fontSize: 20,
+    fontSize: 18,
     color: '#ffffff',
     fontWeight: '400',
+    opacity: 0.8,
   },
+
   buttonContainer: {
     marginBottom: 50,
   },

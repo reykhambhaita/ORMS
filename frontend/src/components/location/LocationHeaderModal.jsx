@@ -15,6 +15,7 @@ import Animated, {
   withSpring,
   withTiming
 } from 'react-native-reanimated';
+import { useTheme } from '../../context/ThemeContext';
 
 const LocationHeaderModal = ({
   visible,
@@ -26,6 +27,7 @@ const LocationHeaderModal = ({
   onAddressCorrect,
   onAddressIncorrect,
 }) => {
+  const { theme, isDark } = useTheme();
   // Calculate active sources
   const getActiveSources = () => {
     if (!locationSources) return [];
@@ -68,6 +70,10 @@ const LocationHeaderModal = ({
     });
   };
 
+  const textColor = isDark ? '#FFFFFF' : '#111111';
+  const textSecondaryColor = isDark ? '#A0A0A0' : '#888888';
+  const iconColor = isDark ? '#FFFFFF' : '#666666';
+
   return (
     <Modal
       visible={visible}
@@ -81,19 +87,19 @@ const LocationHeaderModal = ({
         onPress={handleClose}
       >
         <Animated.View
-          style={[styles.modalContent, animatedContentStyle]}
+          style={[styles.modalContent, animatedContentStyle, { backgroundColor: isDark ? '#000000' : '#ffffff' }]}
           onStartShouldSetResponder={() => true}
           onTouchEnd={(e) => e.stopPropagation()}
         >
           {/* Close Button */}
           <TouchableOpacity style={styles.closeButton} onPress={handleClose}>
-            <Ionicons name="close" size={24} color="#666" />
+            <Ionicons name="close" size={24} color={iconColor} />
           </TouchableOpacity>
 
           {/* Address */}
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>📍 Current Location</Text>
-            <Text style={styles.addressText}>
+            <Text style={[styles.sectionTitle, { color: textSecondaryColor }]}>📍 Current Location</Text>
+            <Text style={[styles.addressText, { color: textColor }]}>
               {currentLocation?.address || 'Acquiring location...'}
             </Text>
           </View>
@@ -104,24 +110,24 @@ const LocationHeaderModal = ({
             currentLocation.address !== 'Address unavailable' && (
               <View style={styles.feedbackContainer}>
                 <TouchableOpacity
-                  style={styles.feedbackButton}
+                  style={[styles.feedbackButton, { borderColor: textColor }]}
                   onPress={onAddressCorrect}
                 >
-                  <Text style={styles.feedbackButtonText}>✓ Correct</Text>
+                  <Text style={[styles.feedbackButtonText, { color: textColor }]}>✓ Correct</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
-                  style={[styles.feedbackButton, styles.feedbackButtonIncorrect]}
+                  style={[styles.feedbackButton, styles.feedbackButtonIncorrect, { borderColor: isDark ? '#444' : '#e5e7eb' }]}
                   onPress={onAddressIncorrect}
                 >
-                  <Text style={styles.feedbackButtonText}>✗ Not quite right</Text>
+                  <Text style={[styles.feedbackButtonText, { color: textColor }]}>✗ Not quite right</Text>
                 </TouchableOpacity>
               </View>
             )}
 
           {/* Coordinates */}
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Coordinates</Text>
-            <Text style={styles.coordsText}>
+            <Text style={[styles.sectionTitle, { color: textSecondaryColor }]}>Coordinates</Text>
+            <Text style={[styles.coordsText, { color: textColor }]}>
               Lat: {currentLocation?.latitude?.toFixed(6) || 'N/A'}
               {'\n'}
               Lng: {currentLocation?.longitude?.toFixed(6) || 'N/A'}
@@ -130,13 +136,13 @@ const LocationHeaderModal = ({
 
           {/* Network Status */}
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Network Status</Text>
+            <Text style={[styles.sectionTitle, { color: textSecondaryColor }]}>Network Status</Text>
             <View style={styles.statusRow}>
               <View style={[
                 styles.statusIndicator,
                 networkStatus?.isConnected ? styles.statusOnline : styles.statusOffline
               ]} />
-              <Text style={styles.statusText}>
+              <Text style={[styles.statusText, { color: textColor }]}>
                 {networkStatus?.isConnected ? 'Online' : 'Offline'}
                 {networkStatus?.type && networkStatus.type !== 'none'
                   ? ` (${networkStatus.type})`
@@ -147,18 +153,18 @@ const LocationHeaderModal = ({
 
           {/* Accuracy & Resources */}
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Accuracy & Resources</Text>
-            <Text style={styles.accuracyText}>
+            <Text style={[styles.sectionTitle, { color: textSecondaryColor }]}>Accuracy & Resources</Text>
+            <Text style={[styles.accuracyText, { color: textColor }]}>
               Accuracy: {currentLocation?.accuracy
                 ? `±${currentLocation.accuracy.toFixed(1)}m`
                 : 'N/A'}
             </Text>
             {activeSources.length > 0 && (
               <View style={styles.sourcesContainer}>
-                <Text style={styles.sourcesLabel}>Active Sources:</Text>
+                <Text style={[styles.sourcesLabel, { color: textSecondaryColor }]}>Active Sources:</Text>
                 {activeSources.map((source, index) => (
                   <View key={index} style={styles.sourceItem}>
-                    <Text style={styles.sourceText}>
+                    <Text style={[styles.sourceText, { color: textColor }]}>
                       • {source.name.toUpperCase()}: ±{source.accuracy?.toFixed(1) || 'N/A'}m
                     </Text>
                   </View>

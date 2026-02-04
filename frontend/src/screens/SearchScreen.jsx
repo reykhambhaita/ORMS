@@ -6,7 +6,7 @@ import MechanicFinder from '../components/mechanics/MechanicFinder';
 import { useTheme } from '../context/ThemeContext';
 
 const SearchScreen = ({ navigation, route, currentLocation, onLandmarksUpdate, onMechanicsUpdate }) => {
-  const { theme } = useTheme();
+  const { theme, isDark } = useTheme();
   const [searchLocation, setSearchLocation] = useState(currentLocation);
   const [searchLocationName, setSearchLocationName] = useState(null);
   const [landmarkSearchQuery, setLandmarkSearchQuery] = useState('');
@@ -64,10 +64,16 @@ const SearchScreen = ({ navigation, route, currentLocation, onLandmarksUpdate, o
             />
           </View>
           <TouchableOpacity
-            style={[styles.addButton, { backgroundColor: theme.primary || '#111111' }]}
+            style={[styles.addButton, { backgroundColor: isDark ? '#fff' : (theme.primary || '#111111') }]}
             onPress={() => landmarkManagerRef.current?.openAddLandmark()}
           >
-            <Ionicons name="add" size={24} color="#fff" />
+            <Ionicons name="add" size={24} color={isDark ? '#000' : '#fff'} />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.addButton, { backgroundColor: isDark ? '#fff' : (theme.primary || '#111111') }]}
+            onPress={() => landmarkManagerRef.current?.openLandmarkList()}
+          >
+            <Ionicons name="map-outline" size={22} color={isDark ? '#000' : '#fff'} />
           </TouchableOpacity>
         </View>
 
