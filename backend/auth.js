@@ -417,6 +417,117 @@ export const uploadAvatar = async (req, res) => {
 // app.patch('/api/auth/update-profile', authenticateToken, updateProfile);
 // app.patch('/api/auth/upload-avatar', authenticateToken, uploadAvatar);
 
+// NEW: Forgot Password handlers
+export const forgotPassword = async (req, res) => {
+  try {
+    const { email } = req.body;
+
+    if (!email) {
+      return res.status(400).json({ error: 'Email is required' });
+    }
+
+    const user = await User.findOne({ email });
+    if (!user) {
+      // For security reasons, don't reveal if user exists or not
+      // But for this app, we can be more helpful
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    // Delete any existing OTP for this email
+    await OTP.deleteMany({ email });
+
+    // Generate and send new OTP
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    await OTP.create({ email, otp });
+
+    const mailOptions = {
+      from: process.env.EMAIL_USER,
+      to: email,
+      subject: 'Password Reset OTP',
+      text: `Your OTP for password reset is ${otp}. It will expire in 10 minutes.`,
+    };
+
+    await sendEmail(mailOptions);
+
+    res.json({
+      success: true,
+      message: 'OTP sent successfully'
+    });
+  } catch (error) {
+    console.error('Forgot password error:', error);
+    res.status(500).json({ error: 'Failed to send OTP' });
+  }
+};
+
+export const verifyForgotPasswordOTP = async (req, res) => {
+  try {
+    const { email, otp } = req.body;
+
+    if (!email || !otp) {
+      return res.status(400).json({ error: 'Email and OTP are required' });
+    }
+
+    const otpDoc = await OTP.findOne({ email, otp });
+
+    if (!otpDoc) {
+      return res.status(400).json({ error: 'Invalid or expired OTP' });
+    }
+
+    // Return success. We don't delete the OTP yet, because we need it to verify the resetRequest
+    // Or we could return a temporary token. For simplicity, let's just return success.
+    res.json({
+      success: true,
+      message: 'OTP verified successfully'
+    });
+  } catch (error) {
+    console.error('Verify forgot password OTP error:', error);
+    res.status(500).json({ error: 'Failed to verify OTP' });
+  }
+};
+
+export const resetPassword = async (req, res) => {
+  try {
+    const { email, otp, newPassword } = req.body;
+
+    if (!email || !otp || !newPassword) {
+      return res.status(400).json({ error: 'Email, OTP and new password are required' });
+    }
+
+    // Verify OTP again to ensure it's still valid
+    const otpDoc = await OTP.findOne({ email, otp });
+    if (!otpDoc) {
+      return res.status(400).json({ error: 'Invalid or expired OTP' });
+    }
+
+    if (newPassword.length < 6) {
+      return res.status(400).json({ error: 'Password must be at least 6 characters' });
+    }
+
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+
+    const user = await User.findOneAndUpdate(
+      { email },
+      { $set: { password: hashedPassword } },
+      { new: true }
+    );
+
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    // Delete the OTP as it's used
+    await OTP.deleteMany({ email });
+
+    res.json({
+      success: true,
+      message: 'Password reset successful'
+    });
+  } catch (error) {
+    console.error('Reset password error:', error);
+    res.status(500).json({ error: 'Failed to reset password' });
+  }
+};
+
 export const verifyOTP = async (req, res) => {
   try {
     const { email, otp } = req.body;

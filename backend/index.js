@@ -5,7 +5,18 @@ import dotenv from 'dotenv';
 import express from 'express';
 import rateLimit from 'express-rate-limit';
 import mongoose from 'mongoose';
-import { getCurrentUser, login, resendOTP, signup, updateProfile, uploadAvatar, verifyOTP } from './auth.js';
+import {
+  forgotPassword,
+  getCurrentUser,
+  login,
+  resendOTP,
+  resetPassword,
+  signup,
+  updateProfile,
+  uploadAvatar,
+  verifyForgotPasswordOTP,
+  verifyOTP
+} from './auth.js';
 import { authenticateToken, optionalAuth, requireMechanic } from './authMiddleware.js';
 import {
   createLandmarkHandler,
@@ -119,6 +130,9 @@ app.post('/api/auth/signup', authLimiter, signup);
 app.post('/api/auth/login', authLimiter, login);
 app.post('/api/auth/verify-otp', authLimiter, verifyOTP);
 app.post('/api/auth/resend-otp', authLimiter, resendOTP);
+app.post('/api/auth/forgot-password', authLimiter, forgotPassword);
+app.post('/api/auth/verify-forgot-password-otp', authLimiter, verifyForgotPasswordOTP);
+app.post('/api/auth/reset-password', authLimiter, resetPassword);
 app.get('/api/auth/me', authenticateToken, getCurrentUser);
 
 // === USER LOCATION ROUTES (Protected) ===
