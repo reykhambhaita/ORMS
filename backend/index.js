@@ -70,16 +70,16 @@ app.use(express.json());
 // Rate limiters configuration
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100,
-  message: 'Too many requests, please try again later.',
+  max: 500, // Increased from 100 to 500 for frequent location syncs
+  message: { error: 'Too many requests, please try again later.' },
   standardHeaders: true,
   legacyHeaders: false,
 });
 
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 5,
-  message: 'Too many authentication attempts, please try again later.',
+  max: 10, // Increased from 5 to 10
+  message: { error: 'Too many authentication attempts, please try again later.' },
   skipSuccessfulRequests: true,
   standardHeaders: true,
   legacyHeaders: false,
