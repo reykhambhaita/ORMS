@@ -23,7 +23,8 @@ import { authenticateToken, optionalAuth, requireMechanic } from './authMiddlewa
 import {
   createLandmarkHandler,
   deleteLandmarkHandler,
-  getNearbyLandmarksHandler
+  getNearbyLandmarksHandler,
+  syncOpenStreetMapHandler
 } from './controllers/landmarkController.js';
 import {
   createMechanicProfileHandler,
