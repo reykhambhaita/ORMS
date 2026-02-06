@@ -298,7 +298,7 @@ app.post('/api/location/reverse-geocode', authenticateToken, async (req, res) =>
   try {
     const { latitude, longitude } = req.body;
 
-    if (!latitude || !longitude) {
+    if (latitude === undefined || longitude === undefined || latitude === null || longitude === null) {
       return res.status(400).json({
         error: 'Missing coordinates',
         message: 'Both latitude and longitude are required'
@@ -373,7 +373,7 @@ app.post('/api/geocode/reverse', async (req, res) => {
   try {
     const { latitude, longitude } = req.body;
 
-    if (!latitude || !longitude) {
+    if (latitude === undefined || longitude === undefined || latitude === null || longitude === null) {
       return res.status(400).json({
         success: false,
         error: 'Latitude and longitude are required'
