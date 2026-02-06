@@ -122,8 +122,8 @@ export const signup = async (req, res) => {
         location: {
           type: 'Point',
           coordinates: [
-            mechanicData?.longitude || 70.77, // Default Rajkot lng
-            mechanicData?.latitude || 23.0225  // Default Rajkot lat
+            mechanicData?.longitude || 0,
+            mechanicData?.latitude || 0
           ]
         },
         specialties: mechanicData?.specialties || [],
@@ -329,8 +329,8 @@ export const updateProfile = async (req, res) => {
           location: {
             type: 'Point',
             coordinates: [
-              mechanicData?.longitude || 70.77,
-              mechanicData?.latitude || 23.0225
+              mechanicData?.longitude || 0,
+              mechanicData?.latitude || 0
             ]
           },
           specialties: mechanicData?.specialties || [],

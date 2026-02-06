@@ -292,9 +292,7 @@ app.post('/api/payments/upi/manual-verify', authenticateToken, manualVerifyPayme
 app.post('/api/payments/upi/expire-old', authenticateToken, expireOldPaymentsHandler);
 
 /**
- * Server-side reverse geocoding endpoint
- * Uses Google Maps API as fallback when client geocoding fails
- * Useful for batch processing or when client is offline
+ * Server-side reverse geocoding endpoint using Geoapify
  */
 app.post('/api/location/reverse-geocode', authenticateToken, async (req, res) => {
   try {
@@ -316,93 +314,48 @@ app.post('/api/location/reverse-geocode', authenticateToken, async (req, res) =>
     }
 
     const geoapifyApiKey = process.env.GEOAPIFY_API_KEY;
-    const googleApiKey = process.env.GOOGLE_MAPS_API_KEY;
 
-    if (!geoapifyApiKey && !googleApiKey) {
+    if (!geoapifyApiKey) {
       return res.status(503).json({
         error: 'Service unavailable',
         message: 'Geocoding service not configured'
       });
     }
 
-    if (geoapifyApiKey) {
-      // Call Geoapify Reverse Geocoding API
-      const response = await axios.get(
-        `https://api.geoapify.com/v1/geocode/reverse`,
-        {
-          params: {
-            lat: latitude,
-            lon: longitude,
-            apiKey: geoapifyApiKey,
-          },
-          timeout: 5000,
-        }
-      );
-
-      if (response.data.features && response.data.features.length > 0) {
-        const result = response.data.features[0].properties;
-
-        res.json({
-          success: true,
-          data: {
-            address: result.formatted,
-            components: {
-              streetNumber: result.housenumber || '',
-              route: result.street || '',
-              city: result.city || '',
-              state: result.state || '',
-              country: result.country || '',
-              postalCode: result.postcode || '',
-            },
-            placeId: result.place_id,
-            locationType: result.rank?.confidence_type || 'unknown',
-            source: 'geoapify',
-          },
-        });
-        return;
+    // Call Geoapify Reverse Geocoding API
+    const response = await axios.get(
+      `https://api.geoapify.com/v1/geocode/reverse`,
+      {
+        params: {
+          lat: latitude,
+          lon: longitude,
+          apiKey: geoapifyApiKey,
+        },
+        timeout: 10000,
       }
-    }
+    );
 
-    // Fallback to Google Maps if Geoapify fails or is not configured
-    if (googleApiKey) {
-      const response = await axios.get(
-        `https://maps.googleapis.com/maps/api/geocode/json`,
-        {
-          params: {
-            latlng: `${latitude},${longitude}`,
-            key: googleApiKey,
+    if (response.data.features && response.data.features.length > 0) {
+      const result = response.data.features[0].properties;
+
+      res.json({
+        success: true,
+        data: {
+          address: result.formatted,
+          components: {
+            streetNumber: result.housenumber || '',
+            route: result.street || '',
+            city: result.city || '',
+            state: result.state || '',
+            country: result.country || '',
+            postalCode: result.postcode || '',
           },
-          timeout: 5000,
-        }
-      );
-
-      if (response.data.status === 'OK' && response.data.results.length > 0) {
-        const result = response.data.results[0];
-
-        // Parse address components
-        const components = {};
-        result.address_components.forEach((component) => {
-          const types = component.types;
-          if (types.includes('street_number')) components.streetNumber = component.long_name;
-          if (types.includes('route')) components.route = component.long_name;
-          if (types.includes('locality')) components.city = component.long_name;
-          if (types.includes('administrative_area_level_1')) components.state = component.long_name;
-          if (types.includes('country')) components.country = component.long_name;
-          if (types.includes('postal_code')) components.postalCode = component.long_name;
-        });
-
-        res.json({
-          success: true,
-          data: {
-            address: result.formatted_address,
-            components,
-            placeId: result.place_id,
-            locationType: result.geometry.location_type,
-            source: 'google',
-          },
-        });
-        return;
-      }
+          placeId: result.place_id,
+          locationType: result.rank?.confidence_type || 'unknown',
+          source: 'geoapify',
+        },
+      });
+      return;
     }
 
     res.status(404).json({
@@ -418,9 +371,9 @@ app.post('/api/location/reverse-geocode', authenticateToken, async (req, res) =>
   }
 });
 
+
 /**
- * NEW: Reverse geocoding proxy endpoint
- * Explicitly requested by user for server-side fallback
+ * Reverse geocoding proxy endpoint using Geoapify
  */
 app.post('/api/geocode/reverse', async (req, res) => {
   try {
@@ -433,48 +386,36 @@ app.post('/api/geocode/reverse', async (req, res) => {
       });
     }
 
-    // Try Geoapify first
-    const GEOAPIFY_API_KEY = '40de999970224d4fb47e909a23fd313e';
+    // Use Geoapify for reverse geocoding
+    const GEOAPIFY_API_KEY = process.env.GEOAPIFY_API_KEY;
     const geoapifyUrl = `https://api.geoapify.com/v1/geocode/reverse?lat=${latitude}&lon=${longitude}&apiKey=${GEOAPIFY_API_KEY}`;
 
     try {
-      const geoapifyResponse = await axios.get(geoapifyUrl);
+      const geoapifyResponse = await axios.get(geoapifyUrl, { timeout: 10000 });
       if (geoapifyResponse.status === 200) {
         const data = geoapifyResponse.data;
         if (data.features && data.features.length > 0) {
+          const result = data.features[0].properties;
           return res.json({
             success: true,
             data: {
-              address: data.features[0].properties.formatted,
+              address: result.formatted,
+              components: {
+                streetNumber: result.housenumber || '',
+                route: result.street || '',
+                city: result.city || '',
+                state: result.state || '',
+                country: result.country || '',
+                postalCode: result.postcode || '',
+              },
+              placeId: result.place_id,
               source: 'geoapify'
             }
           });
         }
       }
     } catch (geoError) {
-      console.warn('Geoapify geocoding failed, falling back to Google Maps:', geoError.message);
-    }
-
-    // Fallback to Google Maps
-    const GOOGLE_MAPS_API_KEY = 'AIzaSyA6avqzVmVw_I18DfhT2ivu1ITG6t6a3OA';
-    const googleUrl = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${latitude},${longitude}&key=${GOOGLE_MAPS_API_KEY}`;
-
-    try {
-      const googleResponse = await axios.get(googleUrl);
-      if (googleResponse.status === 200) {
-        const data = googleResponse.data;
-        if (data.status === 'OK' && data.results && data.results.length > 0) {
-          return res.json({
-            success: true,
-            data: {
-              address: data.results[0].formatted_address,
-              source: 'google'
-            }
-          });
-        }
-      }
-    } catch (googleError) {
-      console.error('Google Maps geocoding failed:', googleError.message);
+      console.error('Geoapify geocoding failed:', geoError.message);
     }
 
     res.status(404).json({
@@ -493,7 +434,7 @@ app.post('/api/geocode/reverse', async (req, res) => {
 
 
 /**
- * Batch reverse geocoding endpoint
+ * Batch reverse geocoding endpoint using Geoapify
  * Process multiple coordinates in one request (max 10)
  */
 app.post('/api/location/batch-reverse-geocode', authenticateToken, async (req, res) => {
@@ -515,9 +456,8 @@ app.post('/api/location/batch-reverse-geocode', authenticateToken, async (req, r
     }
 
     const geoapifyApiKey = process.env.GEOAPIFY_API_KEY;
-    const googleApiKey = process.env.GOOGLE_MAPS_API_KEY;
 
-    if (!geoapifyApiKey && !googleApiKey) {
+    if (!geoapifyApiKey) {
       return res.status(503).json({
         error: 'Service unavailable',
         message: 'Geocoding service not configured'
@@ -526,7 +466,7 @@ app.post('/api/location/batch-reverse-geocode', authenticateToken, async (req, r
 
     const results = [];
 
-    // Process each location
+    // Process each location using Geoapify
     for (const loc of locations) {
       const { latitude, longitude, id } = loc;
 
@@ -540,62 +480,28 @@ app.post('/api/location/batch-reverse-geocode', authenticateToken, async (req, r
       }
 
       try {
-        let success = false;
-
-        // Try Geoapify first
-        if (geoapifyApiKey) {
-          const response = await axios.get(
-            `https://api.geoapify.com/v1/geocode/reverse`,
-            {
-              params: {
-                lat: latitude,
-                lon: longitude,
-                apiKey: geoapifyApiKey,
-              },
-              timeout: 5000,
-            }
-          );
-
-          if (response.data.features && response.data.features.length > 0) {
-            const result = response.data.features[0].properties;
-            results.push({
-              id: id || null,
-              success: true,
-              address: result.formatted,
-              placeId: result.place_id,
-              source: 'geoapify',
-            });
-            success = true;
+        const response = await axios.get(
+          `https://api.geoapify.com/v1/geocode/reverse`,
+          {
+            params: {
+              lat: latitude,
+              lon: longitude,
+              apiKey: geoapifyApiKey,
+            },
+            timeout: 10000,
           }
-        }
+        );
 
-        // Fallback to Google if Geoapify failed
-        if (!success && googleApiKey) {
-          const response = await axios.get(
-            `https://maps.googleapis.com/maps/api/geocode/json`,
-            {
-              params: {
-                latlng: `${latitude},${longitude}`,
-                key: googleApiKey,
-              },
-              timeout: 5000,
-            }
-          );
-
-          if (response.data.status === 'OK' && response.data.results.length > 0) {
-            const result = response.data.results[0];
-            results.push({
-              id: id || null,
-              success: true,
-              address: result.formatted_address,
-              placeId: result.place_id,
-              source: 'google',
-            });
-            success = true;
-          }
-        }
-
-        if (!success) {
+        if (response.data.features && response.data.features.length > 0) {
+          const result = response.data.features[0].properties;
+          results.push({
+            id: id || null,
+            success: true,
+            address: result.formatted,
+            placeId: result.place_id,
+            source: 'geoapify',
+          });
+        } else {
           results.push({
             id: id || null,
             success: false,
@@ -626,6 +532,7 @@ app.post('/api/location/batch-reverse-geocode', authenticateToken, async (req, r
     });
   }
 });
+
 
 /**
  * Get location statistics and insights
