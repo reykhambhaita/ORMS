@@ -4,11 +4,11 @@
     "slug": "orb",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
+    "icon": "./assets/finallogo.png",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
     "splash": {
-      "image": "./assets/splash-icon.png",
+      "image": "./assets/finallogo.png",
       "resizeMode": "contain",
       "backgroundColor": "#ffffff"
     },
@@ -26,7 +26,7 @@
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/adaptive-icon.png",
+        "foregroundImage": "./assets/finallogo.png",
         "backgroundColor": "#ffffff"
       },
       "edgeToEdgeEnabled": true,
@@ -50,7 +50,7 @@
       ]
     },
     "web": {
-      "favicon": "./assets/favicon.png"
+      "favicon": "./assets/finallogo.png"
     },
     "plugins": [
       "expo-sqlite",
@@ -74,7 +74,6 @@
         }
       ],
       "expo-web-browser",
-      "@maplibre/maplibre-react-native",
       "expo-font",
       [
         "expo-build-properties",
@@ -96,7 +95,7 @@
     ],
     "extra": {
       "eas": {
-        "projectId": "572e7a0b-b419-4715-b546-149d29f47602"
+        "projectId": "1b0abaa1-edd2-4441-9f07-f6b808af39e5"
       }
     }
   }

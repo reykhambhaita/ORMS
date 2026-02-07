@@ -1,6 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
+import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import Animated, { FadeInDown, FadeInUp } from 'react-native-reanimated';
 import LandmarkManager from '../components/landmarks/LandmarkManager';
 import MechanicFinder from '../components/mechanics/MechanicFinder';
 import { useTheme } from '../context/ThemeContext';
@@ -51,13 +52,27 @@ const SearchScreen = ({ navigation, route, currentLocation, onLandmarksUpdate, o
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
+          {/* Search Header */}
+          <Animated.View
+            entering={FadeInDown.duration(800).springify().damping(15)}
+            style={styles.searchHeader}
+          >
+            <Text style={[styles.searchTitle, { color: theme.text }]}>Find Assistance</Text>
+            <Text style={[styles.searchSubtitle, { color: theme.textSecondary }]}>
+              Search for landmarks or nearby mechanics to get help quickly.
+            </Text>
+          </Animated.View>
+
           {/* Search Bar Row */}
-          <View style={styles.searchRow}>
+          <Animated.View
+            entering={FadeInUp.duration(1000).delay(200).springify().damping(15)}
+            style={styles.searchRow}
+          >
             <View style={[styles.searchContainer, { backgroundColor: theme.card, borderColor: theme.border }]}>
               <Ionicons name="search" size={20} color={theme.textSecondary} style={styles.searchIcon} />
               <TextInput
                 style={[styles.searchInput, { color: theme.text }]}
-                placeholder="Search clues or landmarks..."
+                placeholder="Search landmarks..."
                 placeholderTextColor={theme.textSecondary}
                 value={landmarkSearchQuery}
                 onChangeText={(text) => {
@@ -80,18 +95,20 @@ const SearchScreen = ({ navigation, route, currentLocation, onLandmarksUpdate, o
             >
               <Ionicons name="map-outline" size={22} color={isDark ? '#000' : '#fff'} />
             </TouchableOpacity>
-          </View>
+          </Animated.View>
 
-          <MechanicFinder
-            ref={mechanicFinderRef}
-            searchLocation={searchLocation}
-            searchLocationName={searchLocationName}
-            onResetToGPS={handleResetToGPS}
-            onMechanicsUpdate={onMechanicsUpdate}
-            navigation={navigation}
-            onFilterPress={() => landmarkManagerRef.current?.openLandmarkList()}
-            targetMechanicId={route.params?.mechanicId}
-          />
+          <Animated.View entering={FadeInUp.duration(1000).delay(400).springify().damping(15)}>
+            <MechanicFinder
+              ref={mechanicFinderRef}
+              searchLocation={searchLocation}
+              searchLocationName={searchLocationName}
+              onResetToGPS={handleResetToGPS}
+              onMechanicsUpdate={onMechanicsUpdate}
+              navigation={navigation}
+              onFilterPress={() => landmarkManagerRef.current?.openLandmarkList()}
+              targetMechanicId={route.params?.mechanicId}
+            />
+          </Animated.View>
         </ScrollView>
       </KeyboardAvoidingView>
       <LandmarkManager
@@ -117,6 +134,20 @@ const styles = StyleSheet.create({
     padding: 20,
     paddingTop: 10,
     paddingBottom: 100, // Space for bottom bar
+  },
+  searchHeader: {
+    marginBottom: 24,
+  },
+  searchTitle: {
+    fontSize: 28,
+    fontWeight: '800',
+    letterSpacing: -0.5,
+    marginBottom: 6,
+  },
+  searchSubtitle: {
+    fontSize: 15,
+    lineHeight: 20,
+    fontWeight: '400',
   },
   searchRow: {
     flexDirection: 'row',

@@ -1,3 +1,4 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import NetInfo from "@react-native-community/netinfo";
 import * as Location from "expo-location";
 import { Accelerometer, Gyroscope, Magnetometer } from "expo-sensors";
@@ -81,6 +82,7 @@ const MultiModalLocationTracker = forwardRef(({ onLocationUpdate, onLandmarksUpd
     accuracy: null,
     address: null,
   });
+  const LAST_LOCATION_KEY = 'orb_last_known_location';
   const [networkStatus, setNetworkStatus] = useState({
     isConnected: false,
     type: "none",
@@ -307,6 +309,17 @@ const MultiModalLocationTracker = forwardRef(({ onLocationUpdate, onLandmarksUpd
     addressSourceRef.current = source;
     lastKnownLocation.current = newLocation;
     lastGeocodedLocation.current = { lat: latitude, lng: longitude, address };
+
+    // Persist to AsyncStorage for faster app launch next time
+    try {
+      await AsyncStorage.setItem(LAST_LOCATION_KEY, JSON.stringify({
+        ...newLocation,
+        address,
+        timestamp: Date.now()
+      }));
+    } catch (e) {
+      console.error('Error persisting location:', e);
+    }
 
     // Update state for UI
     setCurrentLocation(prev => ({
@@ -599,8 +612,8 @@ const MultiModalLocationTracker = forwardRef(({ onLocationUpdate, onLandmarksUpd
 
         await db.current.runAsync(
           `INSERT OR REPLACE INTO mechanics
-        (id, name, phone, latitude, longitude, specialties, rating, available, timestamp, synced)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1);`,
+        (id, name, phone, latitude, longitude, specialties, rating, available, upiId, upiQrCode, timestamp, synced)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1);`,
           [
             id,
             mechanic.name,
@@ -610,6 +623,8 @@ const MultiModalLocationTracker = forwardRef(({ onLocationUpdate, onLandmarksUpd
             JSON.stringify(mechanic.specialties || []),
             mechanic.rating || 0,
             mechanic.available ? 1 : 0,
+            mechanic.upiId || null,
+            mechanic.upiQrCode || null,
             now
           ]
         );
@@ -620,7 +635,7 @@ const MultiModalLocationTracker = forwardRef(({ onLocationUpdate, onLandmarksUpd
   };
 
   // NEW: Get cached mechanics from SQLite
-  const getCachedMechanics = async (latitude, longitude, radiusKm = 10) => {
+  const getCachedMechanics = async (latitude, longitude, radiusKm = 50) => {
     if (!db.current) return [];
     try {
       const latDelta = radiusKm / 111.32;
@@ -654,21 +669,45 @@ const MultiModalLocationTracker = forwardRef(({ onLocationUpdate, onLandmarksUpd
   };
 
   // NEW: Auto-sync function (every 5 minutes)
-  const autoSyncData = async () => {
-    if (!networkStatus.isConnected || !currentLocation?.latitude) return;
+  const autoSyncData = async (locationOverride = null) => {
+    const loc = locationOverride || currentLocation;
+    if (!loc?.latitude) return;
+
+    // If offline, load from local cache only
+    if (!networkStatusRef.current.isConnected) {
+      console.log('📡 Offline: Loading cached mechanics/landmarks...');
+      try {
+        const cachedLandmarks = await getCachedLandmarks(loc.latitude, loc.longitude);
+        if (onLandmarksUpdate) {
+          onLandmarksUpdate(cachedLandmarks);
+        }
+
+        const cachedMechanics = await getCachedMechanics(loc.latitude, loc.longitude);
+        if (onMechanicsUpdate) {
+          onMechanicsUpdate(cachedMechanics);
+        }
+      } catch (error) {
+        console.error('Error loading cached data while offline:', error);
+      }
+      return;
+    }
 
     try {
       // console.log('🔄 Auto-syncing data...');
 
       const FETCH_RADIUS = 5000; // 5km radius for mechanics and landmarks
+
+      console.log('🔄 [AUTO-SYNC] Triggering periodic background sync...');
+
       // Sync landmarks
       const landmarkResult = await authService.getNearbyLandmarks(
-        currentLocation.latitude,
-        currentLocation.longitude,
+        loc.latitude,
+        loc.longitude,
         FETCH_RADIUS
       );
 
       if (landmarkResult.success && landmarkResult.data) {
+        console.log(`✅ [AUTO-SYNC] Synced ${landmarkResult.data.length} landmarks.`);
         await cacheLandmarks(landmarkResult.data);
         if (onLandmarksUpdate) {
           onLandmarksUpdate(landmarkResult.data);
@@ -677,12 +716,13 @@ const MultiModalLocationTracker = forwardRef(({ onLocationUpdate, onLandmarksUpd
 
       // Sync mechanics
       const mechanicResult = await authService.getNearbyMechanics(
-        currentLocation.latitude,
-        currentLocation.longitude,
+        loc.latitude,
+        loc.longitude,
         10000
       );
 
       if (mechanicResult.success && mechanicResult.data) {
+        console.log(`✅ [AUTO-SYNC] Synced ${mechanicResult.data.length} mechanics.`);
         await cacheMechanics(mechanicResult.data);
         if (onMechanicsUpdate) {
           onMechanicsUpdate(mechanicResult.data);
@@ -692,9 +732,9 @@ const MultiModalLocationTracker = forwardRef(({ onLocationUpdate, onLandmarksUpd
       // Sync location history
       await syncWithBackend();
 
-      // console.log('✅ Auto-sync completed');
+      console.log('✅ [AUTO-SYNC] Background sync complete.');
     } catch (error) {
-      console.error('Auto-sync error:', error);
+      console.error('❌ [AUTO-SYNC ERROR] Periodic sync failed:', error);
     }
   };
 
@@ -848,6 +888,28 @@ const MultiModalLocationTracker = forwardRef(({ onLocationUpdate, onLandmarksUpd
   // ---------- Location Initialization ----------
   const initializeLocationTracking = async () => {
     try {
+      // Load last known location from persistence first
+      try {
+        const persisted = await AsyncStorage.getItem(LAST_LOCATION_KEY);
+        if (persisted) {
+          const location = JSON.parse(persisted);
+          setCurrentLocation(location);
+          currentAddressRef.current = location.address;
+          lastKnownLocation.current = location;
+          if (onLocationUpdate) onLocationUpdate(location);
+
+          // Also load cached data for this location
+          const cachedLandmarks = await getCachedLandmarks(location.latitude, location.longitude);
+          if (onLandmarksUpdate) onLandmarksUpdate(cachedLandmarks);
+          const cachedMechanics = await getCachedMechanics(location.latitude, location.longitude);
+          if (onMechanicsUpdate) onMechanicsUpdate(cachedMechanics);
+
+          // console.log('📍 MultiModalLocationTracker: Loaded persisted location and cached data');
+        }
+      } catch (e) {
+        console.error('Error loading persisted location:', e);
+      }
+
       // Check current permissions first
       const { status: existingStatus } = await Location.getForegroundPermissionsAsync();
 
@@ -915,6 +977,12 @@ const MultiModalLocationTracker = forwardRef(({ onLocationUpdate, onLandmarksUpd
         });
 
         // console.log('✅ Initial high-accuracy location acquired');
+
+        // Load data for initial location
+        const cachedLandmarks = await getCachedLandmarks(initialLocation.latitude, initialLocation.longitude);
+        if (onLandmarksUpdate) onLandmarksUpdate(cachedLandmarks);
+        const cachedMechanics = await getCachedMechanics(initialLocation.latitude, initialLocation.longitude);
+        if (onMechanicsUpdate) onMechanicsUpdate(cachedMechanics);
       } catch (error) {
         console.error('Failed to get initial location:', error);
       }
@@ -970,9 +1038,9 @@ const MultiModalLocationTracker = forwardRef(({ onLocationUpdate, onLandmarksUpd
       // Enhanced GPS tracking with better accuracy
       subscriptions.current.location = await Location.watchPositionAsync(
         {
-          accuracy: Location.Accuracy.Balanced, // Lower accuracy to save battery
-          timeInterval: 300000, // 5 minutes
-          distanceInterval: 100, // 100 meters
+          accuracy: Location.Accuracy.Balanced,
+          timeInterval: 10000,
+          distanceInterval: 10,
         },
         (location) => {
           const { latitude, longitude, accuracy, altitude, heading, speed } = location.coords;
@@ -980,14 +1048,13 @@ const MultiModalLocationTracker = forwardRef(({ onLocationUpdate, onLandmarksUpd
           // Only accept GPS fixes with reasonable accuracy
           const maxAcceptableAccuracy = 100; // meters
           if (accuracy > maxAcceptableAccuracy) {
-            // console.log(`⚠️ GPS accuracy too low (${accuracy.toFixed(1)}m), skipping update`);
             return;
           }
 
           // Update GPS source with confidence level
           let confidenceLevel = 'high';
           if (accuracy > 50) confidenceLevel = 'medium';
-          if (accuracy > 100) confidenceLevel = 'low';
+          if (accuracy > 80) confidenceLevel = 'low';
 
           setLocationSources((prev) => ({
             ...prev,
@@ -1179,7 +1246,7 @@ const MultiModalLocationTracker = forwardRef(({ onLocationUpdate, onLandmarksUpd
       } catch (e) {
         // console.error("WiFi scan error:", e);
       }
-    }, 300000);
+    }, 60000); // 1 minute
   };
 
 
@@ -1281,10 +1348,17 @@ const MultiModalLocationTracker = forwardRef(({ onLocationUpdate, onLandmarksUpd
 
     const primarySource = sources[0];
 
-    // Log which source is being used
-    // console.log(`🎯 Using ${primarySource.source} as primary (accuracy: ${primarySource.accuracy?.toFixed(1)}m, confidence: ${primarySource.confidence || 'unknown'})`);
+    // Check for WiFi/BT presence to improve confidence
+    const wifiStrong = locationSourcesRef.current.wifi?.rssi > -60;
+    const btNear = locationSourcesRef.current.bluetooth?.distance < 5;
 
-    const noise = NOISE_MAP[primarySource.source] || 0.05;
+    let confidenceBoost = 1.0;
+    if (wifiStrong || btNear) {
+      confidenceBoost = 0.8; // Lower value = higher confidence/less noise
+      // console.log('📶 Signal Signature: Strong WiFi/BT detected, increasing confidence');
+    }
+
+    const noise = (NOISE_MAP[primarySource.source] || 0.05) * confidenceBoost;
     kalmanLat.current.setMeasurementNoise(noise);
     kalmanLng.current.setMeasurementNoise(noise);
 
@@ -1297,8 +1371,9 @@ const MultiModalLocationTracker = forwardRef(({ onLocationUpdate, onLandmarksUpd
       let weightedLat = filteredLat * totalWeight;
       let weightedLng = filteredLng * totalWeight;
 
+      // Use up to 3 best sources
       sources.slice(1, 3).forEach((source) => {
-        const weight = 1 / ((source.accuracy || 10) * 2);
+        const weight = 1 / ((source.accuracy || 10) * 1.5); // Slightly more weight to secondary sources
         totalWeight += weight;
         weightedLat += source.latitude * weight;
         weightedLng += source.longitude * weight;
@@ -1306,8 +1381,6 @@ const MultiModalLocationTracker = forwardRef(({ onLocationUpdate, onLandmarksUpd
 
       filteredLat = weightedLat / totalWeight;
       filteredLng = weightedLng / totalWeight;
-
-      // console.log(`🔀 Fused ${sources.length} sources`);
     }
 
     const fusedLocation = {
@@ -1315,7 +1388,7 @@ const MultiModalLocationTracker = forwardRef(({ onLocationUpdate, onLandmarksUpd
       longitude: filteredLng,
       accuracy:
         sources.length > 1
-          ? Math.max(5, primarySource.accuracy * 0.7)
+          ? Math.max(5, primarySource.accuracy * 0.6) // More aggressive accuracy improvement
           : primarySource.accuracy,
     };
 

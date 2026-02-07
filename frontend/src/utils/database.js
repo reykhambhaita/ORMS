@@ -114,11 +114,31 @@ class DatabaseManager {
         specialties TEXT,
         rating REAL,
         available INTEGER,
+        upiId TEXT,
+        upiQrCode TEXT,
         timestamp INTEGER NOT NULL,
         synced INTEGER DEFAULT 1
       );
       CREATE INDEX IF NOT EXISTS idx_mechanics_location ON mechanics(latitude, longitude);
     `);
+
+    // Migration: Ensure upiId and upiQrCode columns exist for users with older versions
+    try {
+      const tableInfo = await this.db.getAllAsync("PRAGMA table_info(mechanics)");
+      const hasUpiId = tableInfo.some(col => col.name === 'upiId');
+      const hasUpiQrCode = tableInfo.some(col => col.name === 'upiQrCode');
+
+      if (!hasUpiId) {
+        console.log('🔄 Migrating: Adding upiId column to mechanics table');
+        await this.db.execAsync("ALTER TABLE mechanics ADD COLUMN upiId TEXT;");
+      }
+      if (!hasUpiQrCode) {
+        console.log('🔄 Migrating: Adding upiQrCode column to mechanics table');
+        await this.db.execAsync("ALTER TABLE mechanics ADD COLUMN upiQrCode TEXT;");
+      }
+    } catch (migrationError) {
+      console.error('⚠️ Database migration warning (mechanics table):', migrationError);
+    }
 
     // Payments table
     await this.db.execAsync(`
@@ -194,6 +214,80 @@ class DatabaseManager {
     this.db = null;
     this.initPromise = null;
     this.initializing = false;
+  }
+
+  /**
+   * Save mechanic profile to local database
+   * @param {Object} mechanicProfile - Mechanic profile data
+   */
+  async saveMechanicProfile(mechanicProfile) {
+    try {
+      const db = await this.getDatabase();
+
+      await db.runAsync(
+        `INSERT OR REPLACE INTO mechanics
+        (id, name, phone, latitude, longitude, specialties, rating, available, upiId, upiQrCode, timestamp, synced)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          mechanicProfile.id || 'local',
+          mechanicProfile.name,
+          mechanicProfile.phone,
+          mechanicProfile.location?.latitude || 0,
+          mechanicProfile.location?.longitude || 0,
+          JSON.stringify(mechanicProfile.specialties || []),
+          mechanicProfile.rating || 0,
+          mechanicProfile.available ? 1 : 0,
+          mechanicProfile.upiId || null,
+          mechanicProfile.upiQrCode || null,
+          Date.now(),
+          1
+        ]
+      );
+
+      console.log('✅ Mechanic profile saved to local DB');
+    } catch (error) {
+      console.error('Error saving mechanic profile:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get mechanic profile from local database
+   * @param {string} mechanicId - Mechanic ID (optional, defaults to 'local')
+   * @returns {Promise<Object|null>} Mechanic profile or null
+   */
+  async getMechanicProfile(mechanicId = 'local') {
+    try {
+      const db = await this.getDatabase();
+
+      const result = await db.getFirstAsync(
+        'SELECT * FROM mechanics WHERE id = ? LIMIT 1',
+        [mechanicId]
+      );
+
+      if (!result) {
+        return null;
+      }
+
+      return {
+        id: result.id,
+        name: result.name,
+        phone: result.phone,
+        location: {
+          latitude: result.latitude,
+          longitude: result.longitude
+        },
+        specialties: JSON.parse(result.specialties || '[]'),
+        rating: result.rating,
+        available: result.available === 1,
+        upiId: result.upiId,
+        upiQrCode: result.upiQrCode,
+        timestamp: result.timestamp
+      };
+    } catch (error) {
+      console.error('Error getting mechanic profile:', error);
+      return null;
+    }
   }
 }
 

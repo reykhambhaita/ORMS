@@ -4,6 +4,7 @@ import { useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Image,
   ScrollView,
   StyleSheet,
   Text,
@@ -11,6 +12,7 @@ import {
   TouchableOpacity,
   View
 } from 'react-native';
+import Animated, { FadeInDown, FadeInUp } from 'react-native-reanimated';
 import authService from './authService';
 
 const ForgotPasswordScreen = ({ navigation }) => {
@@ -51,14 +53,24 @@ const ForgotPasswordScreen = ({ navigation }) => {
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.headerSection}>
-          <View style={styles.logoContainer}>
-            <Text style={styles.logoText}>Forgot{'\n'}Password</Text>
-          </View>
+          <Animated.View
+            entering={FadeInDown.duration(1000).springify().damping(12)}
+            style={styles.logoContainer}
+          >
+            <Image
+              source={require('../../assets/finallogo.png')}
+              style={styles.logoImage}
+              resizeMode="contain"
+            />
+          </Animated.View>
         </View>
 
-        <View style={styles.formSection}>
+        <Animated.View
+          entering={FadeInUp.duration(1000).delay(200).springify().damping(12)}
+          style={styles.formSection}
+        >
           <Text style={styles.instructionText}>
-            Enter your email address and we'll send you an OTP to reset your password.
+            Enter your email address to reset your password.
           </Text>
 
           <View style={styles.inputContainer}>
@@ -94,7 +106,7 @@ const ForgotPasswordScreen = ({ navigation }) => {
           >
             <Text style={styles.backButtonText}>BACK TO LOGIN</Text>
           </TouchableOpacity>
-        </View>
+        </Animated.View>
       </ScrollView>
     </View>
   );
@@ -117,13 +129,13 @@ const styles = StyleSheet.create({
   },
   logoContainer: {
     justifyContent: 'center',
+    alignItems: 'center',
+    width: '100%',
+    paddingHorizontal: 40,
   },
-  logoText: {
-    fontSize: 48,
-    fontFamily: 'RussoOne_400Regular',
-    letterSpacing: -1,
-    color: '#000000',
-    lineHeight: 52,
+  logoImage: {
+    width: '100%',
+    height: 120,
   },
   formSection: {
     flex: 1,
@@ -156,17 +168,24 @@ const styles = StyleSheet.create({
     color: '#333',
   },
   continueButton: {
-    backgroundColor: '#111111',
-    height: 56,
-    borderRadius: 16,
+    backgroundColor: '#000000',
+    height: 58,
+    borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: 24,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.15,
+    shadowRadius: 20,
+    elevation: 8,
   },
   continueButtonText: {
     color: '#ffffff',
-    fontSize: 20,
-    fontWeight: '600',
+    fontSize: 18,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 1.5,
   },
   backButton: {
     alignItems: 'center',

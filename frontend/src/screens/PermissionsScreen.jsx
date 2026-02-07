@@ -16,6 +16,7 @@ import {
   TouchableOpacity,
   View
 } from 'react-native';
+import Animated, { FadeInDown, FadeInUp } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme } from '../context/ThemeContext';
 
@@ -145,10 +146,11 @@ const PermissionsScreen = ({ navigation }) => {
       },
       headerLeft: () => (
         <TouchableOpacity
-          onPress={() => navigation.goBack()}
-          style={{ marginLeft: 16 }}
+          onPress={() => navigation.pop()}
+          style={{ padding: 8, marginLeft: 8 }}
+          hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
         >
-          <Ionicons name="chevron-back" size={24} color={theme.text} />
+          <Ionicons name="chevron-back" size={26} color={theme.text} />
         </TouchableOpacity>
       ),
     });
@@ -181,9 +183,15 @@ const PermissionsScreen = ({ navigation }) => {
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]} edges={['bottom']}>
       <ScrollView contentContainerStyle={styles.scrollContent}>
-        <View style={styles.section}>
+        <Animated.View
+          entering={FadeInDown.duration(800).springify().damping(15)}
+          style={styles.section}
+        >
           <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>APP PERMISSIONS</Text>
-          <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border }]}>
+          <Animated.View
+            entering={FadeInUp.duration(1000).delay(200).springify().damping(15)}
+            style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border }]}
+          >
             <PermissionItem
               icon="location-outline"
               label="Location"
@@ -212,15 +220,18 @@ const PermissionsScreen = ({ navigation }) => {
               value={permissions.notification}
               onToggle={() => togglePermission('notification')}
             />
-          </View>
-        </View>
+          </Animated.View>
+        </Animated.View>
 
-        <View style={styles.infoSection}>
+        <Animated.View
+          entering={FadeInUp.duration(1000).delay(400).springify().damping(15)}
+          style={styles.infoSection}
+        >
           <Ionicons name="shield-checkmark-outline" size={32} color={theme.textSecondary} />
           <Text style={[styles.infoText, { color: theme.textSecondary }]}>
             Your privacy is important to us. These permissions allow the app to function properly and provide you with the best experience.
           </Text>
-        </View>
+        </Animated.View>
       </ScrollView>
     </SafeAreaView>
   );

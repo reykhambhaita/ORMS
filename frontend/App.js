@@ -1,3 +1,4 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { StatusBar } from 'expo-status-bar';
@@ -8,6 +9,8 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { TamaguiProvider } from 'tamagui';
 import { ThemeProvider, useTheme } from './src/context/ThemeContext';
 import AuthLoadingScreen from './src/screens/AuthLoading';
+import authService from './src/screens/authService';
+import EditProfileScreen from './src/screens/EditProfileScreen';
 import ForgotPasswordScreen from './src/screens/ForgotPasswordScreen';
 import GetStartedScreen from './src/screens/GetStartedScreen';
 import LoginScreen from './src/screens/LoginScreen';
@@ -20,21 +23,27 @@ import ResetPasswordScreen from './src/screens/ResetPasswordScreen';
 import ReviewMechanicScreen from './src/screens/ReviewMechanicScreen';
 import RoleSelectionScreen from './src/screens/RoleSelectionScreen';
 import SignupScreen from './src/screens/SignupScreen';
-import authService from './src/screens/authService';
 import syncManager from './src/utils/SyncManager';
 import config from './tamagui.config';
 
+const PERSISTENCE_KEY = 'NAVIGATION_STATE_V1';
+
 const Stack = createNativeStackNavigator();
 
-function NavigationStack() {
+function NavigationStack({ initialRoute, initialState }) {
   const { isDark, theme } = useTheme();
 
   return (
     <>
       <StatusBar style={isDark ? 'light' : 'dark'} />
-      <NavigationContainer>
+      <NavigationContainer
+        initialState={initialState}
+        onStateChange={(state) =>
+          AsyncStorage.setItem(PERSISTENCE_KEY, JSON.stringify(state))
+        }
+      >
         <Stack.Navigator
-          initialRouteName="AuthLoading"
+          initialRouteName={initialRoute}
           screenOptions={{
             headerShown: false,
             contentStyle: { backgroundColor: theme.background },
@@ -60,7 +69,7 @@ function NavigationStack() {
             component={LoginScreen}
             options={{
               headerShown: false,
-              animation: 'slide_from_right'
+              animation: 'fade'
             }}
           />
 
@@ -69,7 +78,7 @@ function NavigationStack() {
             component={SignupScreen}
             options={{
               headerShown: false,
-              animation: 'slide_from_right'
+              animation: 'fade'
             }}
           />
 
@@ -78,7 +87,7 @@ function NavigationStack() {
             component={ForgotPasswordScreen}
             options={{
               headerShown: false,
-              animation: 'slide_from_right'
+              animation: 'fade'
             }}
           />
 
@@ -87,7 +96,7 @@ function NavigationStack() {
             component={ResetPasswordScreen}
             options={{
               headerShown: false,
-              animation: 'slide_from_right'
+              animation: 'fade'
             }}
           />
 
@@ -96,7 +105,7 @@ function NavigationStack() {
             component={OTPScreen}
             options={{
               headerShown: false,
-              animation: 'slide_from_right'
+              animation: 'fade'
             }}
           />
 
@@ -105,7 +114,7 @@ function NavigationStack() {
             component={RoleSelectionScreen}
             options={{
               headerShown: false,
-              animation: 'slide_from_right'
+              animation: 'fade'
             }}
           />
 
@@ -176,6 +185,14 @@ function NavigationStack() {
               headerShown: true,
             }}
           />
+          <Stack.Screen
+            name="EditProfile"
+            component={EditProfileScreen}
+            options={{
+              headerShown: true,
+              animation: 'slide_from_right'
+            }}
+          />
         </Stack.Navigator>
       </NavigationContainer>
     </>
@@ -183,23 +200,34 @@ function NavigationStack() {
 }
 
 export default function App() {
-  const [userName, setUserName] = useState('Welcome');
+  const [isReady, setIsReady] = useState(false);
+  const [initialRoute, setInitialRoute] = useState('GetStarted');
+  const [initialState, setInitialState] = useState();
 
   useEffect(() => {
-    // Initialize SyncManager and fetch user data
     const initializeApp = async () => {
       try {
-        // Wait for SyncManager to initialize (ensures network status is known)
-        await syncManager.init();
-        console.log('✅ SyncManager initialized');
+        // Load navigation state
+        const savedStateString = await AsyncStorage.getItem(PERSISTENCE_KEY);
+        const state = savedStateString ? JSON.parse(savedStateString) : undefined;
+        if (state !== undefined) {
+          setInitialState(state);
+        }
 
-        // Fetch user data
-        const result = await authService.getCurrentUser();
-        if (result.success && result.user) {
-          setUserName(result.user.username || 'Welcome');
+        // Initialize SyncManager and Auth
+        await syncManager.init();
+        await authService.initialize();
+
+        const authenticated = await authService.isAuthenticated();
+        if (authenticated) {
+          setInitialRoute('Main');
+        } else {
+          setInitialRoute('GetStarted');
         }
       } catch (error) {
         console.error('Failed to initialize app:', error);
+      } finally {
+        setIsReady(true);
       }
     };
 
@@ -207,7 +235,6 @@ export default function App() {
 
     const subscription = AppState.addEventListener('change', (nextAppState) => {
       if (nextAppState === 'background' || nextAppState === 'inactive') {
-        console.log('📱 App going to background, syncing pending items...');
         syncManager.syncAllPendingChanges();
       }
     });
@@ -217,12 +244,16 @@ export default function App() {
     };
   }, []);
 
+  if (!isReady) {
+    return null; // Or a very minimal splash if desired, but request asked for direct start
+  }
+
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <TamaguiProvider config={config} defaultTheme="light">
         <ThemeProvider>
           <SafeAreaProvider>
-            <NavigationStack />
+            <NavigationStack initialRoute={initialRoute} initialState={initialState} />
           </SafeAreaProvider>
         </ThemeProvider>
       </TamaguiProvider>

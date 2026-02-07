@@ -5,12 +5,14 @@ import { useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Image,
   ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from 'react-native';
+import Animated, { FadeInDown, FadeInUp } from 'react-native-reanimated';
 import authService from './authService';
 
 const RoleSelectionScreen = ({ navigation, route }) => {
@@ -56,13 +58,23 @@ const RoleSelectionScreen = ({ navigation, route }) => {
       >
         {/* Header Section */}
         <View style={styles.headerSection}>
-          <View style={styles.logoContainer}>
-            <Text style={styles.logoText}>choose role</Text>
-          </View>
+          <Animated.View
+            entering={FadeInDown.duration(1000).springify().damping(12)}
+            style={styles.logoContainer}
+          >
+            <Image
+              source={require('../../assets/finallogo.png')}
+              style={styles.logoImage}
+              resizeMode="contain"
+            />
+          </Animated.View>
         </View>
 
         {/* Form Section */}
-        <View style={styles.formSection}>
+        <Animated.View
+          entering={FadeInUp.duration(1000).delay(200).springify().damping(12)}
+          style={styles.formSection}
+        >
           <View style={styles.formContent}>
             <Text style={styles.instructionText}>
               Select how you would like to use Orb.
@@ -127,7 +139,7 @@ const RoleSelectionScreen = ({ navigation, route }) => {
               </Text>
             </Text>
           </View>
-        </View>
+        </Animated.View>
       </ScrollView>
     </View>
   );
@@ -151,13 +163,12 @@ const styles = StyleSheet.create({
   logoContainer: {
     justifyContent: 'center',
     alignItems: 'center',
+    width: '100%',
+    paddingHorizontal: 40,
   },
-  logoText: {
-    fontSize: 44,
-    fontFamily: 'RussoOne_400Regular',
-    letterSpacing: -0.5,
-    color: '#111111',
-    alignSelf: 'center',
+  logoImage: {
+    width: '100%',
+    height: 120,
   },
   formSection: {
     flex: 1,
@@ -196,8 +207,8 @@ const styles = StyleSheet.create({
     borderColor: '#e5e7eb',
   },
   avatarCircleActive: {
-    backgroundColor: '#111111',
-    borderColor: '#111111',
+    backgroundColor: '#000000',
+    borderColor: '#000000',
   },
   avatarLabel: {
     fontSize: 14,
@@ -206,20 +217,27 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
   },
   avatarLabelActive: {
-    color: '#111111',
+    color: '#000000',
   },
   continueButton: {
-    backgroundColor: '#111111',
+    backgroundColor: '#000000',
     height: 60,
-    borderRadius: 16,
+    borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: 24,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.15,
+    shadowRadius: 20,
+    elevation: 8,
   },
   continueButtonText: {
     color: '#ffffff',
-    fontSize: 20,
-    fontWeight: '600',
+    fontSize: 18,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 1.5,
   },
   loginContainer: {
     alignItems: 'center',

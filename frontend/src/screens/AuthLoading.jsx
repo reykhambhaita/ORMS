@@ -49,14 +49,14 @@ const AuthLoadingScreen = ({ navigation }) => {
           // Small delay to show success message
           setTimeout(() => {
             navigation.replace('Main');
-          }, 1500);
+          }, 100);
         } else {
           // Token is invalid or expired, go to login
           console.log('Token invalid, redirecting to login');
           setStatusMessage('Session expired');
           setTimeout(() => {
             navigation.replace('GetStarted');
-          }, 1500);
+          }, 100);
         }
       } else {
         // Not authenticated, go to login
@@ -64,7 +64,7 @@ const AuthLoadingScreen = ({ navigation }) => {
         setStatusMessage('Please log in');
         setTimeout(() => {
           navigation.replace('GetStarted');
-        }, 1500);
+        }, 100);
       }
     } catch (error) {
       console.error('Auth check error:', error);
@@ -78,7 +78,7 @@ const AuthLoadingScreen = ({ navigation }) => {
           setStatusMessage('Offline mode - Using cached data');
           setTimeout(() => {
             navigation.replace('Main');
-          }, 1500);
+          }, 100);
           return;
         }
       } catch (cacheError) {
@@ -88,7 +88,7 @@ const AuthLoadingScreen = ({ navigation }) => {
       // If no cached credentials, go to login
       setTimeout(() => {
         navigation.replace('GetStarted');
-      }, 1500);
+      }, 100);
     }
   };
 

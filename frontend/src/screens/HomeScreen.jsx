@@ -1,14 +1,43 @@
 // src/screens/HomeScreen.jsx
 import { Ionicons } from '@expo/vector-icons';
-import { useLayoutEffect, useState } from 'react';
+import { useEffect, useLayoutEffect, useState } from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import LocationHeaderModal from '../components/location/LocationHeaderModal';
 import OfflineMapView from '../components/map/OfflineMapView';
 import { useTheme } from '../context/ThemeContext';
+import MechanicLocationService from '../services/MechanicLocationService';
 
 const HomeScreen = ({ navigation, route, currentLocation, landmarks, mechanics, trackerRef, user }) => {
   const { theme } = useTheme();
   const [modalVisible, setModalVisible] = useState(false);
+
+  // Start/stop mechanic location service based on user role
+  useEffect(() => {
+    let serviceStarted = false;
+
+    const initializeLocationService = async () => {
+      if (user?.role === 'mechanic') {
+        console.log('🔧 [HomeScreen] User is a mechanic, starting location service...');
+        const result = await MechanicLocationService.start();
+        if (result.success) {
+          serviceStarted = true;
+          console.log('✅ [HomeScreen] Mechanic location service started');
+        } else {
+          console.error('❌ [HomeScreen] Failed to start location service:', result.error);
+        }
+      }
+    };
+
+    initializeLocationService();
+
+    // Cleanup on unmount
+    return () => {
+      if (serviceStarted) {
+        console.log('🛑 [HomeScreen] Stopping mechanic location service...');
+        MechanicLocationService.stop();
+      }
+    };
+  }, [user?.role]);
 
   // Set up header with personalized greeting
   useLayoutEffect(() => {

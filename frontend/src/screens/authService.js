@@ -1,8 +1,10 @@
 import * as SecureStore from 'expo-secure-store';
+import dbManager from '../utils/database';
 
 const API_BASE_URL = 'https://backend-three-sepia-16.vercel.app';
 const TOKEN_KEY = 'orb_auth_token';
 const USER_KEY = 'orb_user_data';
+const DEFAULT_TIMEOUT = 20000;
 
 class AuthService {
   constructor() {
@@ -308,7 +310,7 @@ class AuthService {
             },
           }),
           new Promise((_, reject) =>
-            setTimeout(() => reject(new Error('timeout')), 5000)
+            setTimeout(() => reject(new Error('timeout')), DEFAULT_TIMEOUT)
           )
         ]);
 
@@ -331,6 +333,16 @@ class AuthService {
         console.log('👤 Current user fetched, role:', data.user?.role);
         await SecureStore.setItemAsync(USER_KEY, JSON.stringify(data.user));
 
+        // Save mechanic profile to local DB if present
+        if (data.mechanicProfile) {
+          try {
+            await dbManager.saveMechanicProfile(data.mechanicProfile);
+            console.log('✅ Mechanic profile synced to local DB');
+          } catch (dbError) {
+            console.error('Failed to save mechanic profile to local DB:', dbError);
+          }
+        }
+
         return {
           success: true,
           user: data.user,
@@ -339,10 +351,22 @@ class AuthService {
       } catch (fetchError) {
         if (this.user && (fetchError.message === 'timeout' || fetchError.message.includes('Network'))) {
           console.log('Network error, using cached user');
+
+          // Try to get mechanic profile from local DB
+          let localMechanicProfile = null;
+          if (this.user.role === 'mechanic') {
+            try {
+              localMechanicProfile = await dbManager.getMechanicProfile();
+              console.log('📦 Loaded mechanic profile from local DB (offline fallback)');
+            } catch (dbError) {
+              console.error('Failed to load local mechanic profile:', dbError);
+            }
+          }
+
           return {
             success: true,
             user: this.user,
-            mechanicProfile: null,
+            mechanicProfile: localMechanicProfile,
             offline: true
           };
         }
@@ -364,12 +388,17 @@ class AuthService {
   // Add this method to your AuthService class in authService.js
   // Place it after the getCurrentUser method
 
-  async updateProfile(updates) {
+  async updateProfile(updates, mechanicData = null) {
     try {
       await this.initialize();
 
       if (!this.token) {
         return { success: false, error: 'Not authenticated' };
+      }
+
+      const body = { ...updates };
+      if (mechanicData) {
+        body.mechanicData = mechanicData;
       }
 
       const response = await fetch(`${API_BASE_URL}/api/auth/update-profile`, {
@@ -378,7 +407,7 @@ class AuthService {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${this.token}`
         },
-        body: JSON.stringify(updates)
+        body: JSON.stringify(body)
       });
 
       const data = await this.handleResponse(response);
@@ -389,11 +418,30 @@ class AuthService {
 
       // Update cached user data
       this.user = { ...this.user, ...data.user };
+
+      // Store new token if provided by backend (happens on role change)
+      if (data.token) {
+        console.log('🔄 Role changed, storing new JWT token');
+        await SecureStore.setItemAsync(TOKEN_KEY, data.token);
+        this.token = data.token;
+      }
+
       await SecureStore.setItemAsync(USER_KEY, JSON.stringify(this.user));
+
+      // Save mechanic profile to local DB if present
+      if (data.mechanicProfile) {
+        try {
+          await dbManager.saveMechanicProfile(data.mechanicProfile);
+          console.log('✅ Mechanic profile synced to local DB after update');
+        } catch (dbError) {
+          console.error('Failed to save updated mechanic profile to local DB:', dbError);
+        }
+      }
 
       return {
         success: true,
-        user: data.user
+        user: data.user,
+        mechanicProfile: data.mechanicProfile
       };
     } catch (error) {
       console.error('Update profile error:', error);
@@ -549,7 +597,7 @@ class AuthService {
           headers
         }),
         new Promise((_, reject) =>
-          setTimeout(() => reject(new Error('timeout')), 10000)
+          setTimeout(() => reject(new Error('timeout')), DEFAULT_TIMEOUT)
         )
       ]);
 
@@ -570,7 +618,11 @@ class AuthService {
         };
       }
     } catch (error) {
-      console.error('Landmark API error:', error.message);
+      if (error.message === 'timeout' || error.message.includes('Network')) {
+        console.log('📡 Landmark API: Offline or timeout');
+      } else {
+        console.warn('Landmark API error:', error.message);
+      }
       return {
         success: false,
         error: error.message,
@@ -631,13 +683,54 @@ class AuthService {
   }
 
   async updateMechanicLocation(latitude, longitude) {
-    return await this.authenticatedRequest('/api/mechanics/location', {
-      method: 'PATCH',
-      body: JSON.stringify({
-        latitude,
-        longitude,
-      }),
-    });
+    try {
+      await this.initialize();
+
+      if (!this.token) {
+        return { success: false, error: 'Not authenticated' };
+      }
+
+      // Validate coordinates
+      if (!latitude || !longitude) {
+        return { success: false, error: 'Invalid coordinates' };
+      }
+
+      const lat = Number(latitude);
+      const lng = Number(longitude);
+
+      if (isNaN(lat) || isNaN(lng)) {
+        return { success: false, error: 'Coordinates must be numbers' };
+      }
+
+      if (lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+        return { success: false, error: 'Coordinates out of valid range' };
+      }
+
+      const response = await Promise.race([
+        fetch(`${API_BASE_URL}/api/mechanics/location`, {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${this.token}`
+          },
+          body: JSON.stringify({ latitude: lat, longitude: lng })
+        }),
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('timeout')), 10000) // 10 second timeout
+        )
+      ]);
+
+      const data = await this.handleResponse(response);
+
+      if (response.ok) {
+        return { success: true, data: data.data || data };
+      } else {
+        return { success: false, error: data.error || 'Failed to update location' };
+      }
+    } catch (error) {
+      console.error('Update mechanic location error:', error);
+      return { success: false, error: error.message };
+    }
   }
 
   async updateMechanicAvailability(available) {
@@ -650,12 +743,41 @@ class AuthService {
   }
 
   async updateMechanicUPI(upiId) {
-    return await this.authenticatedRequest('/api/mechanics/upi', {
-      method: 'PATCH',
-      body: JSON.stringify({
-        upiId,
-      }),
-    });
+    try {
+      // Call server API
+      const result = await this.authenticatedRequest('/api/mechanics/upi', {
+        method: 'PATCH',
+        body: JSON.stringify({
+          upiId: upiId || null, // Send null for removal
+        }),
+      });
+
+      // If successful, sync with local database
+      if (result.success && result.data) {
+        try {
+          // Get current mechanic profile from local DB
+          const localProfile = await dbManager.getMechanicProfile();
+
+          if (localProfile) {
+            // Update with new UPI data
+            localProfile.upiId = result.data.upiId || null;
+            localProfile.upiQrCode = result.data.upiQrCode || null;
+
+            // Save back to local DB
+            await dbManager.saveMechanicProfile(localProfile);
+            console.log('✅ UPI data synced to local database');
+          }
+        } catch (dbError) {
+          console.error('Failed to sync UPI to local DB:', dbError);
+          // Don't fail the whole operation if local DB sync fails
+        }
+      }
+
+      return result;
+    } catch (error) {
+      console.error('Update mechanic UPI error:', error);
+      return { success: false, error: error.message };
+    }
   }
 
   async getNearbyMechanics(latitude, longitude, radius = 10000) {
@@ -690,7 +812,7 @@ class AuthService {
           headers
         }),
         new Promise((_, reject) =>
-          setTimeout(() => reject(new Error('timeout')), 10000)
+          setTimeout(() => reject(new Error('timeout')), DEFAULT_TIMEOUT)
         )
       ]);
 
@@ -703,6 +825,15 @@ class AuthService {
 
       if (response.ok) {
         // console.log('✅ [authService.getNearbyMechanics] Success! Found', data.data?.length || 0, 'mechanics');
+
+        // Log individual distances for debugging
+        if (data.data && data.data.length > 0) {
+          console.log('📏 Found mechanics at distances:');
+          data.data.forEach(m => {
+            console.log(`   - ${m.name}: [${m.location.latitude}, ${m.location.longitude}]`);
+          });
+        }
+
         return {
           success: true,
           data: data.data || [],
@@ -718,9 +849,11 @@ class AuthService {
         };
       }
     } catch (error) {
-      console.error('❌ [authService.getNearbyMechanics] Exception:', error.message);
-      console.error('   Error type:', error.name);
-      console.error('   Stack:', error.stack);
+      if (error.message === 'timeout' || error.message.includes('Network')) {
+        console.log('📡 Mechanic API: Offline or timeout');
+      } else {
+        console.warn('❌ [authService.getNearbyMechanics] Exception:', error.message);
+      }
       return {
         success: false,
         error: error.message,
@@ -749,7 +882,7 @@ class AuthService {
           headers
         }),
         new Promise((_, reject) =>
-          setTimeout(() => reject(new Error('timeout')), 10000)
+          setTimeout(() => reject(new Error('timeout')), DEFAULT_TIMEOUT)
         )
       ]);
 

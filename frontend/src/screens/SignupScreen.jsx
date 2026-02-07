@@ -9,8 +9,9 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
-  View,
+  View
 } from 'react-native';
+import Animated, { FadeInDown, FadeInUp } from 'react-native-reanimated';
 import authService from './authService';
 
 const SignupScreen = ({ navigation }) => {
@@ -62,14 +63,20 @@ const SignupScreen = ({ navigation }) => {
         {/* Header Section */}
         <View style={styles.headerSection}>
           {/* Logo */}
-          <View style={styles.logoContainer}>
-            <Text style={styles.logoText}>Create Account</Text>
-          </View>
+          <Animated.View
+            entering={FadeInDown.duration(1000).springify().damping(12)}
+            style={styles.logoContainer}
+          >
+            <Text style={styles.logoText}>Orb</Text>
+          </Animated.View>
         </View>
 
         {/* Form Section */}
         <View style={styles.formSection}>
-          <View style={styles.formContent}>
+          <Animated.View
+            entering={FadeInUp.duration(1000).delay(200).springify().damping(12)}
+            style={styles.formContent}
+          >
             {/* Email Input */}
             <View style={styles.inputContainer}>
               <Text style={styles.inputLabel}>EMAIL</Text>
@@ -123,20 +130,20 @@ const SignupScreen = ({ navigation }) => {
                 <Text style={styles.continueButtonText}>sign up</Text>
               )}
             </TouchableOpacity>
-          </View>
+          </Animated.View>
+        </View>
 
-          {/* Login Link */}
-          <View style={styles.loginContainer}>
-            <Text style={styles.loginText}>
-              Already have an account?{' '}
-              <Text
-                style={styles.loginLink}
-                onPress={() => navigation.navigate('Login')}
-              >
-                Login
-              </Text>
+        {/* Footer Section */}
+        <View style={styles.footerContainer}>
+          <Text style={styles.loginText}>
+            Already have an account?{' '}
+            <Text
+              style={styles.loginLink}
+              onPress={() => navigation.navigate('Login')}
+            >
+              Login
             </Text>
-          </View>
+          </Text>
         </View>
       </ScrollView>
     </View>
@@ -152,8 +159,8 @@ const styles = StyleSheet.create({
     flexGrow: 1,
   },
   headerSection: {
-    height: '30%',
-    minHeight: 200,
+    height: '35%',
+    minHeight: 250,
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: '#ffffff',
@@ -161,20 +168,21 @@ const styles = StyleSheet.create({
   logoContainer: {
     justifyContent: 'center',
     alignItems: 'center',
+    width: '100%',
+    paddingHorizontal: 40,
   },
   logoText: {
-    fontSize: 44,
+    fontSize: 56,
     fontFamily: 'RussoOne_400Regular',
-    letterSpacing: -0.5,
     color: '#000000',
-    alignSelf: 'center',
+    letterSpacing: 2,
   },
   formSection: {
     flex: 1,
     backgroundColor: '#ffffff',
     paddingHorizontal: 32,
-    paddingTop: 20,
-    paddingBottom: 60,
+    paddingTop: 10,
+    paddingBottom: 32,
   },
   formContent: {
     flex: 1,
@@ -200,26 +208,29 @@ const styles = StyleSheet.create({
     color: '#333',
   },
   continueButton: {
-    backgroundColor: '#111111',
-    height: 56,
-    borderRadius: 16,
+    backgroundColor: '#000000',
+    height: 58,
+    borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: 24,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.05,
-    shadowRadius: 12,
-    elevation: 4,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.15,
+    shadowRadius: 20,
+    elevation: 8,
   },
   continueButtonText: {
     color: '#ffffff',
-    fontSize: 20,
-    fontWeight: '600',
+    fontSize: 18,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 1.5,
   },
-  loginContainer: {
+  footerContainer: {
     alignItems: 'center',
-    marginTop: 32,
+    marginTop: 40,
+    marginBottom: 40,
   },
   loginText: {
     fontSize: 14,

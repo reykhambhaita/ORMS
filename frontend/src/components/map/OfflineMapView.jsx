@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import * as MapLibreGL from '@maplibre/maplibre-react-native';
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 
 MapLibreGL.setConnected(true);
 
@@ -95,10 +95,9 @@ const OfflineMapView = ({ currentLocation, landmarks = [], mechanics = [], navig
                 id={`mechanic-${mechanic.id || mechanic._id || index}`}
                 coordinate={[lng, lat]}
                 anchor={{ x: 0.5, y: 1 }}
+                onSelected={() => handleMechanicClick(mechanic)}
               >
-                <TouchableOpacity
-                  onPress={() => handleMechanicClick(mechanic)}
-                  activeOpacity={0.8}
+                <View
                   style={styles.tooltipContainer}
                 >
                   <View style={styles.tooltipContent}>
@@ -109,7 +108,7 @@ const OfflineMapView = ({ currentLocation, landmarks = [], mechanics = [], navig
                     </View>
                   </View>
                   <View style={styles.tooltipArrow} />
-                </TouchableOpacity>
+                </View>
               </MapLibreGL.PointAnnotation>
             );
           })}
@@ -196,7 +195,7 @@ const styles = StyleSheet.create({
     width: 14,
     height: 14,
     borderRadius: 7,
-    backgroundColor: '#3B82F6',
+    backgroundColor: '#000000ff',
     borderWidth: 2,
     borderColor: '#ffffff',
   },
@@ -214,7 +213,7 @@ const styles = StyleSheet.create({
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: '#10B981',
+    backgroundColor: '#5c5c5cff',
     opacity: 0.6,
   },
   landmarkLabelContainer: {
@@ -235,8 +234,8 @@ const styles = StyleSheet.create({
   },
   tooltipContent: {
     backgroundColor: '#111111',
-    paddingVertical: 7,
-    paddingHorizontal: 12,
+    paddingVertical: 9,
+    paddingHorizontal: 14,
     borderRadius: 14,
     flexDirection: 'row',
     alignItems: 'center',
@@ -304,7 +303,7 @@ const styles = StyleSheet.create({
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: '#EF4444',
+    backgroundColor: '#000000ff',
   },
   countText: {
     fontSize: 14,

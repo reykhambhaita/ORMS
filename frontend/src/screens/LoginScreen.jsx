@@ -11,6 +11,7 @@ import {
   TouchableOpacity,
   View
 } from 'react-native';
+import Animated, { FadeInDown, FadeInUp } from 'react-native-reanimated';
 import authService from './authService';
 const LoginScreen = ({ navigation }) => {
   const [fontsLoaded] = useFonts({
@@ -53,14 +54,20 @@ const LoginScreen = ({ navigation }) => {
         {/* Header Section */}
         <View style={styles.headerSection}>
           {/* Logo */}
-          <View style={styles.logoContainer}>
+          <Animated.View
+            entering={FadeInDown.duration(1000).springify().damping(12)}
+            style={styles.logoContainer}
+          >
             <Text style={styles.logoText}>Orb</Text>
-          </View>
+          </Animated.View>
         </View>
 
         {/* Form Section */}
         <View style={styles.formSection}>
-          <View style={styles.formContent}>
+          <Animated.View
+            entering={FadeInUp.duration(1000).delay(200).springify().damping(12)}
+            style={styles.formContent}
+          >
             {/* Email Input */}
             <View style={styles.inputContainer}>
               <Text style={styles.inputLabel}>EMAIL</Text>
@@ -110,21 +117,20 @@ const LoginScreen = ({ navigation }) => {
                 <Text style={styles.forgotPasswordText}>FORGOT PASSWORD?</Text>
               </TouchableOpacity>
             </View>
-          </View>
+          </Animated.View>
+        </View>
 
-
-          {/* Sign Up Link */}
-          <View style={styles.signupContainer}>
-            <Text style={styles.signupText}>
-              Don't have an account yet?{' '}
-              <Text
-                style={styles.signupLink}
-                onPress={() => navigation.navigate('Signup')}
-              >
-                Sign Up
-              </Text>
+        {/* Footer Section */}
+        <View style={styles.footerContainer}>
+          <Text style={styles.signupText}>
+            Don't have an account yet?{' '}
+            <Text
+              style={styles.signupLink}
+              onPress={() => navigation.navigate('Signup')}
+            >
+              Sign Up
             </Text>
-          </View>
+          </Text>
         </View>
       </ScrollView>
     </View>
@@ -149,19 +155,20 @@ const styles = StyleSheet.create({
   logoContainer: {
     justifyContent: 'center',
     alignItems: 'center',
+    width: '100%',
+    paddingHorizontal: 40,
   },
   logoText: {
     fontSize: 56,
     fontFamily: 'RussoOne_400Regular',
-    letterSpacing: 2,
     color: '#000000',
-    alignSelf: 'center',
+    letterSpacing: 2,
   },
   formSection: {
     flex: 1,
     backgroundColor: '#ffffff',
     paddingHorizontal: 32,
-    paddingTop: 20,
+    paddingTop: 10,
     paddingBottom: 32,
   },
   formContent: {
@@ -188,22 +195,24 @@ const styles = StyleSheet.create({
     color: '#333',
   },
   loginButton: {
-    backgroundColor: '#111111',
-    height: 56,
-    borderRadius: 16,
+    backgroundColor: '#000000',
+    height: 58,
+    borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: 24,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.05,
-    shadowRadius: 12,
-    elevation: 4,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.15,
+    shadowRadius: 20,
+    elevation: 8,
   },
   loginButtonText: {
     color: '#ffffff',
-    fontSize: 20,
-    fontWeight: '600',
+    fontSize: 18,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 1.5,
   },
   forgotPasswordContainer: {
     alignItems: 'center',
@@ -216,9 +225,10 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     letterSpacing: 1,
   },
-  signupContainer: {
+  footerContainer: {
     alignItems: 'center',
-    marginTop: 16,
+    marginTop: 40,
+    marginBottom: 40,
   },
   signupText: {
     fontSize: 14,

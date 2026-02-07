@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Image,
   ScrollView,
   StyleSheet,
   Text,
@@ -11,6 +12,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import Animated, { FadeInDown, FadeInUp } from 'react-native-reanimated';
 import authService from './authService';
 
 const OTPScreen = ({ navigation, route }) => {
@@ -106,12 +108,22 @@ const OTPScreen = ({ navigation, route }) => {
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.headerSection}>
-          <View style={styles.logoContainer}>
-            <Text style={styles.logoText}>Verify Email</Text>
-          </View>
+          <Animated.View
+            entering={FadeInDown.duration(1000).springify().damping(12)}
+            style={styles.logoContainer}
+          >
+            <Image
+              source={require('../../assets/finallogo.png')}
+              style={styles.logoImage}
+              resizeMode="contain"
+            />
+          </Animated.View>
         </View>
 
-        <View style={styles.formSection}>
+        <Animated.View
+          entering={FadeInUp.duration(1000).delay(200).springify().damping(12)}
+          style={styles.formSection}
+        >
           <View style={styles.formContent}>
             <Text style={styles.instructionText}>
               We've sent a 6-digit verification code to:
@@ -156,7 +168,7 @@ const OTPScreen = ({ navigation, route }) => {
               </TouchableOpacity>
             </View>
           </View>
-        </View>
+        </Animated.View>
       </ScrollView>
     </View>
   );
@@ -180,20 +192,18 @@ const styles = StyleSheet.create({
   logoContainer: {
     justifyContent: 'center',
     alignItems: 'center',
+    width: '100%',
+    paddingHorizontal: 40,
   },
-  logoText: {
-    fontSize: 44,
-    fontFamily: 'RussoOne_400Regular',
-    letterSpacing: -0.5,
-    color: '#000000',
-    alignSelf: 'center',
-    textAlign: 'center',
+  logoImage: {
+    width: '100%',
+    height: 120,
   },
   formSection: {
     flex: 1,
     backgroundColor: '#ffffff',
     paddingHorizontal: 32,
-    paddingTop: 20,
+    paddingTop: 10,
     paddingBottom: 60,
   },
   formContent: {
@@ -235,13 +245,13 @@ const styles = StyleSheet.create({
     backgroundColor: '#f9fafb',
   },
   otpBlockFilled: {
-    borderColor: '#111111',
+    borderColor: '#000000',
     backgroundColor: '#ffffff',
   },
   otpDigit: {
     fontSize: 24,
     fontWeight: '700',
-    color: '#111111',
+    color: '#000000',
   },
   hiddenInput: {
     position: 'absolute',
@@ -250,22 +260,24 @@ const styles = StyleSheet.create({
     height: '100%',
   },
   verifyButton: {
-    backgroundColor: '#111111',
+    backgroundColor: '#000000',
     height: 60,
-    borderRadius: 16,
+    borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: 12,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 10,
-    elevation: 5,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.15,
+    shadowRadius: 20,
+    elevation: 8,
   },
   verifyButtonText: {
     color: '#ffffff',
-    fontSize: 20,
-    fontWeight: '600',
+    fontSize: 18,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 1.5,
   },
   resendContainer: {
     flexDirection: 'row',

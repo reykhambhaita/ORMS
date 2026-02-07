@@ -18,6 +18,8 @@ import {
   View,
 } from 'react-native';
 import Animated, {
+  FadeInDown,
+  FadeInUp,
   runOnJS,
   useAnimatedStyle,
   useSharedValue,
@@ -40,19 +42,18 @@ const ProfileScreen = ({ navigation }) => {
   const [reviewHistory, setReviewHistory] = useState([]);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [showReviewModal, setShowReviewModal] = useState(false);
-  const [showEditModal, setShowEditModal] = useState(false);
   const [showAppearanceModal, setShowAppearanceModal] = useState(false);
-  const [editUsername, setEditUsername] = useState('');
-  const [editEmail, setEditEmail] = useState('');
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [showUpiModal, setShowUpiModal] = useState(false);
   const [editUpiId, setEditUpiId] = useState('');
   const [mechanicProfile, setMechanicProfile] = useState(null);
   const [savingUpi, setSavingUpi] = useState(false);
   const [showExpandedQR, setShowExpandedQR] = useState(false);
+  const [showLogoutModal, setShowLogoutModal] = useState(false);
+  const [showAboutModal, setShowAboutModal] = useState(false);
 
   const translateY = useSharedValue(800);
-  const anyModalVisible = showPaymentModal || showReviewModal || showEditModal || showAppearanceModal || showUpiModal;
+  const anyModalVisible = showPaymentModal || showReviewModal || showAppearanceModal || showUpiModal || showLogoutModal || showAboutModal;
 
   useEffect(() => {
     if (anyModalVisible) {
@@ -105,8 +106,6 @@ const ProfileScreen = ({ navigation }) => {
       const userResult = await authService.getCurrentUser();
       if (userResult.success) {
         setUser(userResult.user);
-        setEditUsername(userResult.user?.username || '');
-        setEditEmail(userResult.user?.email || '');
 
         if (userResult.mechanicProfile) {
           setMechanicProfile(userResult.mechanicProfile);
@@ -138,33 +137,9 @@ const ProfileScreen = ({ navigation }) => {
   };
 
   const handleEditProfile = () => {
-    setShowEditModal(true);
+    navigation.navigate('EditProfile');
   };
 
-  const handleSaveProfile = async () => {
-    if (!editUsername.trim() || !editEmail.trim()) {
-      Alert.alert('Error', 'Username and email are required');
-      return;
-    }
-
-    try {
-      const result = await authService.updateProfile({
-        username: editUsername,
-        email: editEmail,
-      });
-
-      if (result.success) {
-        setUser({ ...user, username: editUsername, email: editEmail });
-        setShowEditModal(false);
-        Alert.alert('Success', 'Profile updated successfully');
-      } else {
-        Alert.alert('Error', result.message || 'Failed to update profile');
-      }
-    } catch (error) {
-      console.error('Update profile error:', error);
-      Alert.alert('Error', 'Failed to update profile');
-    }
-  };
 
   const handleAvatarEdit = async () => {
     try {
@@ -230,26 +205,19 @@ const ProfileScreen = ({ navigation }) => {
   };
 
   const handleLogout = async () => {
-    Alert.alert(
-      'Logout',
-      'Are you sure you want to logout?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Logout',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await authService.logout();
-              navigation.replace('Login');
-            } catch (error) {
-              console.error('Logout error:', error);
-              Alert.alert('Error', 'Failed to logout');
-            }
-          }
-        }
-      ]
-    );
+    setShowLogoutModal(true);
+  };
+
+  const confirmLogout = async () => {
+    try {
+      await authService.logout();
+      navigation.replace('Login');
+    } catch (error) {
+      console.error('Logout error:', error);
+      Alert.alert('Error', 'Failed to logout');
+    } finally {
+      setShowLogoutModal(false);
+    }
   };
 
   const formatDate = (dateString) => {
@@ -271,7 +239,7 @@ const ProfileScreen = ({ navigation }) => {
     return (
       <View style={[styles(theme).loadingContainer, { backgroundColor: theme.background }]}>
         <ActivityIndicator size="large" color={theme.text} />
-        <Text style={[styles(theme).loadingText, { color: theme.textSecondary }]}>Loading profile...</Text>
+        <Text style={[styles(theme).loadingText, { color: theme.textSecondary }]}>Loading</Text>
       </View>
     );
   }
@@ -293,7 +261,10 @@ const ProfileScreen = ({ navigation }) => {
         }
       >
         {/* User Profile Card */}
-        <View style={dynamicStyles.profileCard}>
+        <Animated.View
+          entering={FadeInDown.duration(800).springify().damping(15)}
+          style={dynamicStyles.profileCard}
+        >
           <View style={dynamicStyles.avatarContainer}>
             <View style={dynamicStyles.avatar}>
               {user?.avatar ? (
@@ -324,10 +295,13 @@ const ProfileScreen = ({ navigation }) => {
           <TouchableOpacity style={dynamicStyles.editButton} onPress={handleEditProfile}>
             <Text style={dynamicStyles.editButtonText}>edit info</Text>
           </TouchableOpacity>
-        </View>
+        </Animated.View>
 
         {/* Menu Options */}
-        <View style={dynamicStyles.menuContainer}>
+        <Animated.View
+          entering={FadeInUp.duration(1000).delay(200).springify().damping(15)}
+          style={dynamicStyles.menuContainer}
+        >
           <TouchableOpacity
             style={dynamicStyles.menuItem}
             onPress={() => setShowAppearanceModal(true)}
@@ -384,30 +358,34 @@ const ProfileScreen = ({ navigation }) => {
 
           <TouchableOpacity
             style={[dynamicStyles.menuItem, dynamicStyles.menuItemLast]}
-            onPress={() => Alert.alert('About', 'Orb - On-Road Mechanic Service\nVersion 1.0.0')}
+            onPress={() => setShowAboutModal(true)}
           >
             <Text style={dynamicStyles.menuItemText}>About</Text>
             <Ionicons name="chevron-forward" size={20} color={theme.textSecondary} />
           </TouchableOpacity>
-        </View>
+        </Animated.View>
 
         {/* GitHub Repository Card */}
-        <TouchableOpacity style={dynamicStyles.repoCard} onPress={openGitHub}>
-          <Text style={dynamicStyles.repoTitle}>Check out the app repository here.</Text>
-          <View style={dynamicStyles.repoInfo}>
-            <Ionicons name="logo-github" size={32} color={theme.text} />
-            <Text style={dynamicStyles.repoLink}>reykhambhaita/Orb</Text>
-          </View>
-        </TouchableOpacity>
+        <Animated.View entering={FadeInUp.duration(1000).delay(400).springify().damping(15)}>
+          <TouchableOpacity style={dynamicStyles.repoCard} onPress={openGitHub}>
+            <Text style={dynamicStyles.repoTitle}>Check out the app repository here.</Text>
+            <View style={dynamicStyles.repoInfo}>
+              <Ionicons name="logo-github" size={32} color={theme.text} />
+              <Text style={dynamicStyles.repoLink}>reykhambhaita/Orb</Text>
+            </View>
+          </TouchableOpacity>
+        </Animated.View>
 
         {/* Logout Button */}
-        <TouchableOpacity
-          style={dynamicStyles.logoutButton}
-          onPress={handleLogout}
-          activeOpacity={0.8}
-        >
-          <Text style={dynamicStyles.logoutButtonText}>logout</Text>
-        </TouchableOpacity>
+        <Animated.View entering={FadeInUp.duration(1000).delay(600).springify().damping(15)}>
+          <TouchableOpacity
+            style={dynamicStyles.logoutButton}
+            onPress={handleLogout}
+            activeOpacity={0.8}
+          >
+            <Text style={dynamicStyles.logoutButtonText}>logout</Text>
+          </TouchableOpacity>
+        </Animated.View>
 
         {/* Copyright Footer */}
         <View style={dynamicStyles.copyrightContainer}>
@@ -580,61 +558,6 @@ const ProfileScreen = ({ navigation }) => {
         </TouchableOpacity>
       </Modal>
 
-      {/* Edit Profile Modal */}
-      <Modal
-        visible={showEditModal}
-        animationType="fade"
-        transparent={true}
-        onRequestClose={() => animateAndClose(setShowEditModal)}
-      >
-        <TouchableOpacity
-          style={dynamicStyles.modalOverlay}
-          activeOpacity={1}
-          onPress={() => animateAndClose(setShowEditModal)}
-        >
-          <Animated.View style={[dynamicStyles.modalContent, animatedContentStyle]}>
-            <View style={dynamicStyles.modalHeader}>
-              <Text style={dynamicStyles.modalTitle}>Edit Profile</Text>
-              <TouchableOpacity onPress={() => animateAndClose(setShowEditModal)}>
-                <Ionicons name="close" size={28} color={theme.text} />
-              </TouchableOpacity>
-            </View>
-
-            <View style={dynamicStyles.editForm}>
-              <View style={dynamicStyles.inputContainer}>
-                <Text style={dynamicStyles.inputLabel}>Username</Text>
-                <TextInput
-                  style={dynamicStyles.input}
-                  value={editUsername}
-                  onChangeText={setEditUsername}
-                  placeholder="Enter username"
-                  placeholderTextColor={theme.textSecondary}
-                />
-              </View>
-
-              <View style={dynamicStyles.inputContainer}>
-                <Text style={dynamicStyles.inputLabel}>Email</Text>
-                <TextInput
-                  style={dynamicStyles.input}
-                  value={editEmail}
-                  onChangeText={setEditEmail}
-                  placeholder="Enter email"
-                  placeholderTextColor={theme.textSecondary}
-                  keyboardType="email-address"
-                  autoCapitalize="none"
-                />
-              </View>
-
-              <TouchableOpacity
-                style={dynamicStyles.saveButton}
-                onPress={handleSaveProfile}
-              >
-                <Text style={dynamicStyles.saveButtonText}>Save Changes</Text>
-              </TouchableOpacity>
-            </View>
-          </Animated.View>
-        </TouchableOpacity>
-      </Modal>
 
       {/* UPI Modal */}
       <Modal
@@ -693,36 +616,89 @@ const ProfileScreen = ({ navigation }) => {
                     This ID will be used to generate a QR code for customers to pay you directly via UPI.
                   </Text>
 
-                  <TouchableOpacity
-                    style={[dynamicStyles.saveButton, savingUpi && { opacity: 0.7 }]}
-                    onPress={async () => {
-                      setSavingUpi(true);
-                      try {
-                        const result = await authService.updateMechanicUPI(editUpiId);
-                        if (result.success) {
-                          setMechanicProfile({
-                            ...mechanicProfile,
-                            upiId: result.data.upiId,
-                            upiQrCode: result.data.upiQrCode
-                          });
-                          Alert.alert('Success', 'UPI details updated successfully');
-                        } else {
-                          Alert.alert('Error', result.error || 'Failed to update UPI');
+                  <View style={{ flexDirection: 'row', gap: 12, alignItems: 'center' }}>
+                    <TouchableOpacity
+                      style={[dynamicStyles.saveButton, { flex: 1 }, savingUpi && { opacity: 0.7 }]}
+                      onPress={async () => {
+                        if (!editUpiId.trim()) {
+                          Alert.alert('Error', 'Please enter a valid UPI ID');
+                          return;
                         }
-                      } catch (error) {
-                        Alert.alert('Error', 'Failed to update UPI');
-                      } finally {
-                        setSavingUpi(false);
-                      }
-                    }}
-                    disabled={savingUpi}
-                  >
-                    {savingUpi ? (
-                      <ActivityIndicator color={theme.primaryText} />
-                    ) : (
-                      <Text style={dynamicStyles.saveButtonText}>Save Details</Text>
+                        setSavingUpi(true);
+                        try {
+                          const result = await authService.updateMechanicUPI(editUpiId);
+                          if (result.success) {
+                            setMechanicProfile({
+                              ...mechanicProfile,
+                              upiId: result.data.upiId,
+                              upiQrCode: result.data.upiQrCode
+                            });
+                            Alert.alert('Success', 'UPI details updated successfully');
+                          } else {
+                            Alert.alert('Error', result.error || 'Failed to update UPI');
+                          }
+                        } catch (error) {
+                          Alert.alert('Error', 'Failed to update UPI');
+                        } finally {
+                          setSavingUpi(false);
+                        }
+                      }}
+                      disabled={savingUpi}
+                    >
+                      {savingUpi ? (
+                        <ActivityIndicator color={theme.primaryText} />
+                      ) : (
+                        <Text style={dynamicStyles.saveButtonText}>Save UPI ID</Text>
+                      )}
+                    </TouchableOpacity>
+
+                    {mechanicProfile?.upiId && (
+                      <TouchableOpacity
+                        style={[dynamicStyles.removeButton, savingUpi && { opacity: 0.7 }]}
+                        onPress={async () => {
+                          Alert.alert(
+                            'Remove UPI ID',
+                            'Are you sure you want to remove your UPI ID? Your QR code will also be deleted.',
+                            [
+                              { text: 'Cancel', style: 'cancel' },
+                              {
+                                text: 'Remove',
+                                style: 'destructive',
+                                onPress: async () => {
+                                  setSavingUpi(true);
+                                  try {
+                                    const result = await authService.updateMechanicUPI('');
+                                    if (result.success) {
+                                      setMechanicProfile({
+                                        ...mechanicProfile,
+                                        upiId: null,
+                                        upiQrCode: null
+                                      });
+                                      setEditUpiId('');
+                                      Alert.alert('Success', 'UPI ID removed successfully');
+                                    } else {
+                                      Alert.alert('Error', result.error || 'Failed to remove UPI');
+                                    }
+                                  } catch (error) {
+                                    Alert.alert('Error', 'Failed to remove UPI');
+                                  } finally {
+                                    setSavingUpi(false);
+                                  }
+                                }
+                              }
+                            ]
+                          );
+                        }}
+                        disabled={savingUpi}
+                      >
+                        {savingUpi ? (
+                          <ActivityIndicator color="#fff" />
+                        ) : (
+                          <Ionicons name="trash-outline" size={20} color="#fff" />
+                        )}
+                      </TouchableOpacity>
                     )}
-                  </TouchableOpacity>
+                  </View>
                 </View>
               </View>
             </ScrollView>
@@ -760,6 +736,104 @@ const ProfileScreen = ({ navigation }) => {
           </View>
         </TouchableOpacity>
       </Modal>
+      {/* Logout Modal */}
+      <Modal
+        visible={showLogoutModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowLogoutModal(false)}
+      >
+        <TouchableOpacity
+          style={dynamicStyles.slickModalOverlay}
+          activeOpacity={1}
+          onPress={() => setShowLogoutModal(false)}
+        >
+          <Animated.View style={[dynamicStyles.slickModalContent, animatedContentStyle]}>
+            <View style={dynamicStyles.slickModalHandle} />
+            <Text style={dynamicStyles.slickModalTitle}>Logout</Text>
+            <Text style={dynamicStyles.slickModalText}>Are you sure you want to exit? You will need to login again to access your account.</Text>
+
+            <View style={dynamicStyles.slickButtonRow}>
+              <TouchableOpacity
+                style={[dynamicStyles.slickButton, dynamicStyles.slickButtonSecondary]}
+                onPress={() => setShowLogoutModal(false)}
+              >
+                <Text style={dynamicStyles.slickButtonTextSecondary}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[dynamicStyles.slickButton, dynamicStyles.slickButtonPrimary]}
+                onPress={confirmLogout}
+              >
+                <Text style={dynamicStyles.slickButtonTextPrimary}>Logout</Text>
+              </TouchableOpacity>
+            </View>
+          </Animated.View>
+        </TouchableOpacity>
+      </Modal>
+
+      {/* About Modal */}
+      <Modal
+        visible={showAboutModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowAboutModal(false)}
+      >
+        <TouchableOpacity
+          style={dynamicStyles.slickModalOverlay}
+          activeOpacity={1}
+          onPress={() => setShowAboutModal(false)}
+        >
+          <Animated.View style={[dynamicStyles.slickModalContent, animatedContentStyle]}>
+            <View style={dynamicStyles.slickModalHandle} />
+            <Text style={dynamicStyles.slickModalTitle}>About Orb</Text>
+
+            <ScrollView style={dynamicStyles.aboutScroll} showsVerticalScrollIndicator={false}>
+              <Text style={dynamicStyles.aboutDescription}>
+                Orb is a premium on-road mechanic service application designed to bridge the gap between stranded motorists and skilled mechanics.
+                Whether you're in the heart of the city or on a remote highway, Orb ensures you're never truly stranded.
+              </Text>
+
+              <View style={dynamicStyles.featureSection}>
+                <Text style={dynamicStyles.featureHeading}>Core Features</Text>
+
+                <View style={dynamicStyles.featureItem}>
+                  <Ionicons name="location" size={18} color="#111" />
+                  <Text style={dynamicStyles.featureText}>Real-time location tracking & assistance</Text>
+                </View>
+
+                <View style={dynamicStyles.featureItem}>
+                  <Ionicons name="map" size={18} color="#111" />
+                  <Text style={dynamicStyles.featureText}>Offline mapping for remote areas</Text>
+                </View>
+
+                <View style={dynamicStyles.featureItem}>
+                  <Ionicons name="search" size={18} color="#111" />
+                  <Text style={dynamicStyles.featureText}>Landmark discovery & navigation</Text>
+                </View>
+
+                <View style={dynamicStyles.featureItem}>
+                  <Ionicons name="card" size={18} color="#111" />
+                  <Text style={dynamicStyles.featureText}>Secure & instant UPI payments</Text>
+                </View>
+
+                <View style={dynamicStyles.featureItem}>
+                  <Ionicons name="star" size={18} color="#111" />
+                  <Text style={dynamicStyles.featureText}>Robust review & rating system</Text>
+                </View>
+              </View>
+
+              <Text style={dynamicStyles.versionText}>Version 1.0.0 (Stable)</Text>
+            </ScrollView>
+
+            <TouchableOpacity
+              style={[dynamicStyles.slickButton, dynamicStyles.slickButtonPrimary, { marginTop: 20 }]}
+              onPress={() => setShowAboutModal(false)}
+            >
+              <Text style={dynamicStyles.slickButtonTextPrimary}>Got it</Text>
+            </TouchableOpacity>
+          </Animated.View>
+        </TouchableOpacity>
+      </Modal>
     </View>
   );
 };
@@ -781,6 +855,8 @@ const styles = (theme) => StyleSheet.create({
   loadingText: {
     marginTop: 12,
     fontSize: 14,
+    color: theme.textSecondary,
+    fontFamily: 'RussoOne_400Regular',
   },
   profileCard: {
     backgroundColor: theme.card,
@@ -1081,7 +1157,6 @@ const styles = (theme) => StyleSheet.create({
     borderRadius: 12,
     paddingVertical: 16,
     alignItems: 'center',
-    marginTop: 12,
   },
   saveButtonText: {
     color: theme.primaryText,
@@ -1133,6 +1208,7 @@ const styles = (theme) => StyleSheet.create({
 });
 
 export default ProfileScreen;
+
 /* UPI Additional Styles */
 const upiStyles = (theme) => ({
   upiInfoContainer: { paddingBottom: 40 },
@@ -1145,6 +1221,7 @@ const upiStyles = (theme) => ({
   upiForm: { marginTop: 8 },
   upiHelpText: { fontSize: 12, color: theme.textSecondary, marginTop: 8, marginBottom: 20, lineHeight: 18 },
   tapToExpandText: { fontSize: 10, color: '#888', marginTop: 12, fontWeight: '500' },
+  removeButton: { width: 56, height: 56, backgroundColor: '#ef4444', borderRadius: 12, justifyContent: 'center', alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 4, elevation: 3 },
   expandedQrOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.8)', justifyContent: 'center', alignItems: 'center', padding: 30 },
   expandedQrContent: { backgroundColor: '#fff', borderRadius: 24, padding: 30, alignItems: 'center', width: '100%' },
   expandedQrTitle: { fontSize: 18, fontWeight: '700', color: '#111', marginBottom: 20, fontFamily: 'RussoOne_400Regular' },
@@ -1153,4 +1230,23 @@ const upiStyles = (theme) => ({
   expandedQrHint: { fontSize: 12, color: '#888', marginTop: 20, textAlign: 'center' },
   closeExpandedButton: { marginTop: 30, paddingVertical: 12, paddingHorizontal: 40, backgroundColor: '#111', borderRadius: 12 },
   closeExpandedText: { color: '#fff', fontWeight: '600' },
+  /* Slick Modal Styles */
+  slickModalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' },
+  slickModalContent: { backgroundColor: '#fff', borderTopLeftRadius: 32, borderTopRightRadius: 32, padding: 30, paddingBottom: 40, width: '100%', shadowColor: '#000', shadowOffset: { width: 0, height: -10 }, shadowOpacity: 0.1, shadowRadius: 20, elevation: 20 },
+  slickModalHandle: { width: 40, height: 6, backgroundColor: '#eee', borderRadius: 3, alignSelf: 'center', marginBottom: 20 },
+  slickModalTitle: { fontSize: 24, fontWeight: '800', color: '#111', marginBottom: 12, fontFamily: 'RussoOne_400Regular' },
+  slickModalText: { fontSize: 16, color: '#444', marginBottom: 30, lineHeight: 24 },
+  slickButtonRow: { flexDirection: 'row', gap: 12 },
+  slickButton: { flex: 1, height: 56, borderRadius: 20, justifyContent: 'center', alignItems: 'center' },
+  slickButtonPrimary: { backgroundColor: '#111' },
+  slickButtonSecondary: { backgroundColor: '#fff', borderWidth: 2, borderColor: '#111' },
+  slickButtonTextPrimary: { color: '#fff', fontSize: 16, fontWeight: '700' },
+  slickButtonTextSecondary: { color: '#111', fontSize: 16, fontWeight: '700' },
+  aboutScroll: { maxHeight: 350 },
+  aboutDescription: { fontSize: 15, color: '#333', lineHeight: 22, marginBottom: 20 },
+  featureSection: { backgroundColor: '#f9f9f9', borderRadius: 24, padding: 20, marginBottom: 20 },
+  featureHeading: { fontSize: 14, fontWeight: '800', color: '#111', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 15 },
+  featureItem: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 12 },
+  featureText: { fontSize: 14, color: '#333', fontWeight: '500' },
+  versionText: { fontSize: 12, color: '#999', textAlign: 'center', marginTop: 10 },
 });

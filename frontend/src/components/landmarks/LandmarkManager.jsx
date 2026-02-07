@@ -1,7 +1,7 @@
 // src/components/landmarks/LandmarkManager.jsx
 import { Ionicons } from '@expo/vector-icons';
 import NetInfo from "@react-native-community/netinfo";
-import { forwardRef, useEffect, useImperativeHandle, useState } from 'react';
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -47,6 +47,9 @@ const LandmarkManager = forwardRef(({ currentLocation, onLandmarksUpdate, onLand
   const [isOnline, setIsOnline] = useState(true);
   const [previousOnlineState, setPreviousOnlineState] = useState(true);
   const [syncing, setSyncing] = useState(false);
+  const isLoadingLandmarks = useRef(false);
+  const isCachingLandmarks = useRef(false);
+  const searchQueryTimer = useRef(null);
 
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
@@ -64,6 +67,7 @@ const LandmarkManager = forwardRef(({ currentLocation, onLandmarksUpdate, onLand
         damping: 20,
         stiffness: 90,
       });
+      loadLandmarks(); // Load on demand
     },
     openAddLandmark() {
       setAddModalVisible(true);
@@ -71,6 +75,7 @@ const LandmarkManager = forwardRef(({ currentLocation, onLandmarksUpdate, onLand
         damping: 15,
         stiffness: 90,
       });
+      loadLandmarks(); // Load on demand
     }
   }));
 
@@ -146,12 +151,31 @@ const LandmarkManager = forwardRef(({ currentLocation, onLandmarksUpdate, onLand
     loadUser();
   }, []);
 
-  // Auto-load landmarks
+  // Load landmarks when search query becomes active (with debounce)
   useEffect(() => {
-    if (currentLocation?.latitude && currentLocation?.longitude && dbReady) {
-      loadLandmarks();
+    if (dbReady) {
+      if (searchQuery.length > 0) {
+        // Clear existing timer
+        if (searchQueryTimer.current) {
+          clearTimeout(searchQueryTimer.current);
+        }
+
+        // Set a new timer
+        searchQueryTimer.current = setTimeout(() => {
+          loadLandmarks();
+        }, 500); // 500ms debounce
+      } else {
+        // Query cleared, load default nearby
+        loadLandmarks();
+      }
     }
-  }, [currentLocation?.latitude, currentLocation?.longitude, dbReady]);
+
+    return () => {
+      if (searchQueryTimer.current) {
+        clearTimeout(searchQueryTimer.current);
+      }
+    };
+  }, [searchQuery, dbReady]);
 
   const loadLandmarks = async () => {
     if (!currentLocation?.latitude || !currentLocation?.longitude) {
@@ -159,7 +183,13 @@ const LandmarkManager = forwardRef(({ currentLocation, onLandmarksUpdate, onLand
       return;
     }
 
+    if (isLoadingLandmarks.current) {
+      console.log('Load landmarks already in progress, skipping...');
+      return;
+    }
+
     setLoading(true);
+    isLoadingLandmarks.current = true;
 
     try {
       const db = await dbManager.getDatabase();
@@ -219,6 +249,7 @@ const LandmarkManager = forwardRef(({ currentLocation, onLandmarksUpdate, onLand
       }
     } finally {
       setLoading(false);
+      isLoadingLandmarks.current = false;
     }
   };
 
@@ -259,9 +290,13 @@ const LandmarkManager = forwardRef(({ currentLocation, onLandmarksUpdate, onLand
       return;
     }
 
+    if (isCachingLandmarks.current) {
+      return;
+    }
+    isCachingLandmarks.current = true;
+
     try {
       const database = db || await dbManager.getDatabase();
-
       if (!database) {
         console.warn('Database not available for caching');
         return;
@@ -269,7 +304,8 @@ const LandmarkManager = forwardRef(({ currentLocation, onLandmarksUpdate, onLand
 
       const now = Date.now();
 
-      // Use withTransactionAsync for atomic operations
+      // Use a standard runAsync loop if withTransactionAsync is failing mysteriously
+      // or wrap it carefully
       await database.withTransactionAsync(async () => {
         for (const landmark of landmarks) {
           const id = landmark._id || landmark.id;
@@ -288,6 +324,8 @@ const LandmarkManager = forwardRef(({ currentLocation, onLandmarksUpdate, onLand
       console.log(`Cached ${landmarks.length} landmarks`);
     } catch (error) {
       console.error('Cache landmarks error:', error);
+    } finally {
+      isCachingLandmarks.current = false;
     }
   };
 
@@ -494,10 +532,14 @@ const LandmarkManager = forwardRef(({ currentLocation, onLandmarksUpdate, onLand
             if (result.success && result.data) {
               // Update local database with server ID and mark as synced
               await db.withTransactionAsync(async () => {
-                await db.runAsync(
-                  'UPDATE landmarks SET id = ?, synced = 1 WHERE id = ?',
-                  [result.data.id, landmark.id]
-                );
+                try {
+                  await db.runAsync(
+                    'UPDATE landmarks SET id = ?, synced = 1 WHERE id = ?',
+                    [result.data.id, landmark.id]
+                  );
+                } catch (e) {
+                  console.error('Inner transaction error:', e);
+                }
               });
 
               console.log(`Synced landmark: ${landmark.name} (new ID: ${result.data.id})`);

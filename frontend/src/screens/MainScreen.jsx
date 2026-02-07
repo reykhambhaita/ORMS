@@ -31,9 +31,12 @@ const MainScreen = ({ navigation, route }) => {
 
   // Switch to Search tab if a mechanicId is passed via navigation params (e.g., from Map tooltips)
   useEffect(() => {
-    if (route.params?.mechanicId) {
-      console.log('🔄 MainScreen: Deep-link detected, switching to Search tab');
-      setActiveTab('Search');
+    const mechanicId = route.params?.mechanicId;
+    if (mechanicId) {
+      console.log('🔄 MainScreen: Deep-link detected for mechanic:', mechanicId, 'switching to Search tab');
+      if (activeTab !== 'Search') {
+        setActiveTab('Search');
+      }
     }
   }, [route.params?.mechanicId]);
 
