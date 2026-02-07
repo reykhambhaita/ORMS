@@ -237,8 +237,9 @@ export const getNearbyMechanicsHandler = async (req, res) => {
 
     // console.log('✅ [getNearbyMechanicsHandler] Parsed coordinates:', { latitude, longitude });
 
-    const searchRadius = radius ? parseInt(radius) : 5000; // Default 5km
-    // console.log('🔍 [getNearbyMechanicsHandler] Search radius:', searchRadius, 'meters');
+    const searchRadius = radius ? parseInt(radius) : 5000; // Default 5km (in meters)
+
+    // console.log(`🔍 [getNearbyMechanicsHandler] Searching [${latitude}, ${longitude}] with radius ${searchRadius}m`);
 
     const mechanics = await getNearbyMechanics(latitude, longitude, searchRadius);
 

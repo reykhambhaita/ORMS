@@ -319,9 +319,13 @@ export const updateProfile = async (req, res) => {
 
     // Handle mechanic profile creation if role changed to mechanic
     let mechanicProfile = null;
-    if (updates.role === 'mechanic') {
+    let newToken = null;
+
+    if (updates.role === 'mechanic' || user.role === 'mechanic') {
       const existingMechanic = await Mechanic.findOne({ userId: user._id });
-      if (!existingMechanic) {
+
+      if (!existingMechanic && updates.role === 'mechanic') {
+        // Create NEW mechanic profile
         mechanicProfile = new Mechanic({
           userId: user._id,
           name: mechanicData?.name || user.username,
@@ -329,21 +333,38 @@ export const updateProfile = async (req, res) => {
           location: {
             type: 'Point',
             coordinates: [
-              mechanicData?.longitude || 0,
-              mechanicData?.latitude || 0
+              Number(mechanicData?.longitude) || 0,
+              Number(mechanicData?.latitude) || 0
             ]
           },
           specialties: mechanicData?.specialties || [],
           available: mechanicData?.available !== undefined ? mechanicData.available : true
         });
         await mechanicProfile.save();
-      } else {
+      } else if (existingMechanic) {
+        // UPDATE existing mechanic profile if location provided
+        if (mechanicData?.latitude && mechanicData?.longitude) {
+          existingMechanic.location = {
+            type: 'Point',
+            coordinates: [
+              Number(mechanicData.longitude),
+              Number(mechanicData.latitude)
+            ]
+          };
+          await existingMechanic.save();
+        }
         mechanicProfile = existingMechanic;
       }
     }
 
+    // Generate new token if role was updated (to avoid stale role in JWT)
+    if (role && role !== req.userRole) {
+      newToken = generateToken(user._id, user.role);
+    }
+
     res.json({
       success: true,
+      token: newToken,
       user: {
         id: user._id,
         email: user.email,
